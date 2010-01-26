@@ -49,6 +49,7 @@ import calendar
 import Cookie
 import cStringIO
 import datetime
+import database
 import email.utils
 import escape
 import functools
@@ -61,8 +62,10 @@ import logging
 import mimetypes
 import os.path
 import re
+import session
 import stat
 import sys
+import tempfile
 import template
 import time
 import types
@@ -83,6 +86,16 @@ class RequestHandler(object):
     def __init__(self, application, request, transforms=None):
         self.application = application
         self.request = request
+        self.session = self._create_session()
+        self.session._set_cookie_actions(
+            delete=functools.partial(self.clear_cookie,
+                                     self.application.settings.get('session_cookie_name', 'session_id'),
+                                     path=self.application.settings.get('session_cookie_path', '/')),
+            refresh=functools.partial(self.set_secure_cookie,
+                                      self.application.settings.get('session_cookie_name', 'session_id'),
+                                      expires_days=None,
+                                      expires=None,
+                                      path=self.application.settings.get('session_cookie_path', '/')))
         self._headers_written = False
         self._finished = False
         self._auto_finish = True
@@ -767,6 +780,58 @@ class RequestHandler(object):
     def _ui_method(self, method):
         return lambda *args, **kwargs: method(self, *args, **kwargs)
 
+    def _create_session(self):
+        settings = self.application.settings # just a shortcut
+        url = settings.get('session_storage', 'file://') # default to file storage
+        expires = session.BaseSession._value_to_epoch_time(settings.get('session_age'))
+        session_id = self.get_secure_cookie(settings.get('session_cookie_name', 'session_id'))
+        new_session = None
+
+        if url and not url.startswith('file'):
+            if url.startswith('mysql'):
+                if not session_id: # create a new session
+                    new_session = session.MySQLSession(
+                        settings['_db'],
+                        security_model=settings.get('session_security_model', []),
+                        expires=expires,
+                        ip_address=self.request.remote_ip,
+                        user_agent=self.request.headers.get('User-Agent'))
+                else: # load existing session
+                    # TODO: check session validity according to security model
+                    return session.MySQLSession.load(session_id, settings['_db'])
+            elif url.startswith('postgresql'):
+                raise NotImplemented
+            elif url.startswith('sqlite'):
+                raise NotImplemented
+            elif url.startswith('memcached'):
+                raise NotImplemented
+            elif url.startswith('mongodb'):
+                raise NotImplemented
+        else:
+            path = url[7:]
+            if not session_id: # create new session
+                new_session = session.FileSession(
+                    security_mode=settings.get('session_security_model', []),
+                    expires=expires,
+                    ip_address=self.request.remote_ip,
+                    user_agent=self.request.headers.get('User-Agent'),
+                    file_path=path)
+            else: # return existing session
+                # TODO: check session validity according to security model
+                return session.FileSession.load(session_id, path)
+
+        # store the newly created session server-side...
+        new_session.save()
+        # ...and client-side
+        self.set_secure_cookie(settings.get('session_cookie_name', 'session_id'),
+                               new_session.session_id,
+                               expires=datetime.datetime.fromtimestamp(expires),
+                               domain=settings.get('session_cookie_domain'),
+                               path=settings.get('session_cookie_path', '/')) 
+        return new_session
+
+
+
 
 def asynchronous(method):
     """Wrap request handler methods with this if they are asynchronous.
@@ -883,6 +948,15 @@ class Application(object):
             self.transforms.append(ChunkedTransferEncoding)
         else:
             self.transforms = transforms
+        if not settings.get('session_storage'):
+            session_file = tempfile.NamedTemporaryFile(
+                prefix='tornado_sessions_', delete=False)
+            settings['session_storage'] = 'file://'+session_file.name
+        if settings.get('session_storage').startswith('mysql'):
+            # create a connection to MySQL 
+            u, p, h, d = session.MySQLSession._parse_connection_details(
+                settings['session_storage'])
+            settings['_db'] = database.Connection(h, d, user=u, password=p)
         self.handlers = []
         self.named_handlers = {}
         self.default_host = default_host
