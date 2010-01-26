@@ -70,10 +70,7 @@ import csv
 import collections
 import datetime
 import os
-try:
-    import cPickle as pickle
-except ImportError:
-    import pickle
+import cPickle as pickle
 import re
 import tempfile
 import time
