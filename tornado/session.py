@@ -148,7 +148,7 @@ class BaseSession(collections.MutableMapping):
 
     @classmethod
     def _generate_session_id(cls):
-        return os.urandom(16).encode('hex') # 128 bits of entropy
+        return os.urandom(32).encode('hex') # 256 bits of entropy
 
     @classmethod
     def _value_to_epoch_time(self, value=None):
