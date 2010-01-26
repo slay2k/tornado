@@ -339,8 +339,7 @@ class MySQLSession(BaseSession):
     def _parse_connection_details(cls, details):
         # mysql://username:password[@hostname[:port]]/db
 
-        try:
-            details.find('@') # raises ValueError if no hostname and port specified
+        if details.find('@') != -1:
             match = re.match('mysql://(\w+):(.*?)@([\w|\.]+)(?::(\d+))?/(\S+)', details)
             username = match.group(1)
             password = match.group(2)
@@ -348,7 +347,7 @@ class MySQLSession(BaseSession):
             port = match.group(4) or '3306'
             database = match.group(5)
             host_port = hostname + ':' + port
-        except ValueError: # hostname and port not specified
+        else: # hostname and port not specified
             host_port = 'localhost:3306'
             match = re.match('mysql://(\w+):(.*?)/(\S+)', details)
             username = match.group(1)
@@ -363,19 +362,19 @@ class MySQLSession(BaseSession):
         and update data."""
         if not self.connection.get("""show tables like 'tornado_sessions'"""):
             self.connection.execute( # create table if it doesn't exist
-                """create table `tornado_sessions` (
-                `session_id` varchar(32) not null primary key,
-                `data` varchar(5000),
-                `expires` integer,
-                `ip_address` varchar(16),
-                `user_agent` varchar(255)
+                """create table tornado_sessions (
+                session_id varchar(64) not null primary key,
+                data longtext,
+                expires integer,
+                ip_address varchar(46),
+                user_agent varchar(255)
                 );""")
         self.connection.execute( # MySQL's almost-upsert
-            """replace `tornado_sessions`
-            (`session_id`, `data`, `expires`, `ip_address`, `user_agent`)
-            values('%s', '%s', '%s', '%s', '%s');""" % (self.session_id, self.serialize(),
-                                                        self.expires, self.ip_address,
-                                                        self.user_agent))
+            """replace tornado_sessions
+            (session_id, data, expires, ip_address, user_agent)
+            values(%s, %s, %s, %s, %s);""",
+            self.session_id, self.serialize(), self.expires, self.ip_address,
+            self.user_agent)
         self.dirty = False
 
     @staticmethod
@@ -383,7 +382,8 @@ class MySQLSession(BaseSession):
         """Load stored session or return a new, clean one if the old no longer
         exist in the database."""
         data = connection.get("""
-        select * from `tornado_sessions` where session_id = '%s';""" % session_id)
+        select session_id, data, expires, ip_address, user_agent
+        from tornado_sessions where session_id = %s;""",  session_id)
         if data:
             return MySQLSession.deserialize(data['data'], connection)
         else:
@@ -392,7 +392,7 @@ class MySQLSession(BaseSession):
     def delete(self):
         """Remove session data from the database."""
         self.connection.execute("""
-        delete from `tornado_sessions` where session_id = '%s';""" % self.session_id)
+        delete from tornado_sessions where session_id = %s;""", self.session_id)
 
     def serialize(self):
         dump = {'session_id': self.session_id,
