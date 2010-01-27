@@ -12,9 +12,8 @@ Every session object can be handled as a dictionary:
     self.session[key] = value
     var = self.session[key]
 
-Unfortunately, for now, you have to explicitly save the session
-if the sessin data has been updated. This will be fixed in the
-near future.
+The session data is saved automatically for you when the request
+handler finishes. 
 
 Two utility functions, invalidate() and refresh() are available to
 every session object. Read their documentation to learn more.

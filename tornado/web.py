@@ -486,6 +486,9 @@ class RequestHandler(object):
             self.flush(include_footers=True)
             self.request.finish()
             self._log()
+
+        if self.session.dirty:
+            self.session.save()
         self._finished = True
 
     def send_error(self, status_code=500, **kwargs):
