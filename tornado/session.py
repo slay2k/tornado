@@ -137,7 +137,7 @@ class BaseSession(collections.MutableMapping):
         return self.data.__iter__()
 
     def __len__(self):
-        return len(seld.data.keys())
+        return len(self.data.keys())
 
     @classmethod
     def _generate_session_id(cls):
