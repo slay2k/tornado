@@ -790,19 +790,18 @@ class RequestHandler(object):
         expires = settings.get('session_age')
         session_id = self.get_secure_cookie(settings.get('session_cookie_name', 'session_id'))
         new_session = None
+        old_session = None
 
         if url and not url.startswith('file'):
             if url.startswith('mysql'):
-                if not session_id: # create a new session
+                old_session = session.MySQLSession.load(session_id, settings['_db'])
+                if old_session is None: # create a new session
                     new_session = session.MySQLSession(
                         settings['_db'],
                         security_model=settings.get('session_security_model', []),
                         expires=expires,
                         ip_address=self.request.remote_ip,
                         user_agent=self.request.headers.get('User-Agent'))
-                else: # load existing session
-                    # TODO: check session validity according to security model
-                    return session.MySQLSession.load(session_id, settings['_db'])
             elif url.startswith('postgresql'):
                 raise NotImplemented
             elif url.startswith('sqlite'):
@@ -813,20 +812,21 @@ class RequestHandler(object):
                 raise NotImplemented
         else:
             path = url[7:]
-            if not session_id: # create new session
+            old_session = session.FileSession.load(session_id, path)
+            if old_session is None: # create new session
                 new_session = session.FileSession(
                     security_mode=settings.get('session_security_model', []),
                     expires=expires,
                     ip_address=self.request.remote_ip,
                     user_agent=self.request.headers.get('User-Agent'),
                     file_path=path)
-            else: # return existing session
-                # TODO: check session validity according to security model
-                return session.FileSession.load(session_id, path)
 
-        # store the newly created session server-side...
+        if old_session is not None:
+            # TODO: security checks, session regeneration
+            return old_session
+
+        # store the newly created session server-side and client-side
         new_session.save()
-        # ...and client-side
         self.set_secure_cookie(settings.get('session_cookie_name', 'session_id'),
                                new_session.session_id,
                                expires_days=None,

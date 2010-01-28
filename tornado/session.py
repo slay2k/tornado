@@ -67,6 +67,7 @@ import base64
 import csv
 import collections
 import datetime
+import database
 import os
 import cPickle as pickle
 import re
@@ -100,18 +101,23 @@ class BaseSession(collections.MutableMapping):
     For inspiration, check out the FileSession or MySQLSession class."""
     def __init__(self, session_id=None, data=None, security_model=[], expires=None,
                  ip_address=None, user_agent=None, **kwargs):
+        # if session_id is True, we're loading a previously initialized session
         if session_id:
             self.session_id = session_id
+            self.data = data
+            self.expires = expires
+            self.dirty = False
         else:
             self.session_id = self._generate_session_id()
-        self.data = data or {}
-        self.expires = self._value_to_epoch_time(expires)
+            self.data = {}
+            self.expires = self._value_to_epoch_time(expires)
+            self.dirty = True
+
         self.ip_address = ip_address
         self.user_agent = user_agent
         self.security_model = security_model
         self._delete_cookie = False
         self._refresh_cookie = False
-        self.dirty = False
 
     def __repr__(self):
         return '<session id: %s data: %s>' % (self.session_id, self.data)
@@ -184,6 +190,7 @@ class BaseSession(collections.MutableMapping):
             self.delete()
             self.session_id = self._generate_session_id()
         if new_session_id or save:
+            self.dirty = True # to force save
             self.save() # store server-side
         self._refresh_cookie = True # store client-side
 
@@ -227,6 +234,8 @@ class FileSession(BaseSession):
         """Save the session. To prevent data loss, we read from the original
         file and write the updated data to a temporary file. When all data is
         written, we rename the temporary file to the original. """
+        if not self.dirty:
+            return
         found = False
         reader_file = open(self.file_path, 'rb')
         reader = csv.DictReader(reader_file,
@@ -261,9 +270,7 @@ class FileSession(BaseSession):
 
     @staticmethod
     def load(session_id, path):
-        """Loads a session from the specified file. If the session doesn't
-        exist anymore, the function returns a new, clean one. In either case
-        it returns a FileSession instance."""
+        """Loads a session from the specified file."""
         reader_file = open(path, 'rb')
         reader = csv.DictReader(reader_file,
                                 fieldnames=['session_id', 'data', 'expires', 'ip_address', 'user-agent'])
@@ -272,7 +279,7 @@ class FileSession(BaseSession):
                 reader_file.close()                
                 return FileSession.deserialize(line['data'])
         reader_file.close()
-        return FileSession(path) # return empty session when bad ID
+        return None
 
     def delete(self):
         """Remove the session from the storage file. File manipulation is
@@ -346,9 +353,12 @@ class MySQLSession(BaseSession):
         return username, password, host_port, database
 
     def save(self):
-        """Store the session data to database. If the table 'tornado_sessions'
-        does not exist yet, create it. MySQL replace method is used to insert
-        and update data."""
+        """Store the session data to database. Session is saved only if it
+        is necessary. If the table 'tornado_sessions' does not exist yet,
+        create it. It uses MySQL's "non-standard insert ... on duplicate key
+        "update query."""
+        if not self.dirty:
+            return
         if not self.connection.get("""show tables like 'tornado_sessions'"""):
             self.connection.execute( # create table if it doesn't exist
                 """create table tornado_sessions (
@@ -358,25 +368,32 @@ class MySQLSession(BaseSession):
                 ip_address varchar(46),
                 user_agent varchar(255)
                 );""")
-        self.connection.execute( # MySQL's almost-upsert
-            """replace tornado_sessions
-            (session_id, data, expires, ip_address, user_agent)
-            values(%s, %s, %s, %s, %s);""",
+
+        self.connection.execute( # MySQL's upsert
+            """insert into tornado_sessions
+            (session_id, data, expires, ip_address, user_agent) values
+            (%s, %s, %s, %s, %s)
+            on duplicate key update
+            session_id=values(session_id), data=values(data), expires=values(expires),
+            ip_address=values(ip_address), user_agent=values(user_agent);""",
             self.session_id, self.serialize(), self.expires, self.ip_address,
             self.user_agent)
         self.dirty = False
 
     @staticmethod
     def load(session_id, connection):
-        """Load stored session or return a new, clean one if the old no longer
-        exist in the database."""
-        data = connection.get("""
-        select session_id, data, expires, ip_address, user_agent
-        from tornado_sessions where session_id = %s;""",  session_id)
-        if data:
-            return MySQLSession.deserialize(data['data'], connection)
-        else:
-            return MySQLSession(connection)
+        """Load the stored session."""
+        try:
+            data = connection.get("""
+            select session_id, data, expires, ip_address, user_agent
+            from tornado_sessions where session_id = %s;""",  session_id)
+            if data:
+                return MySQLSession.deserialize(data['data'], connection)
+            else:
+                return None
+        except database.ProgrammingError:
+            # table does not exist yet, will be created on first save()
+            return None
 
     def delete(self):
         """Remove session data from the database."""
