@@ -479,7 +479,7 @@ class RequestHandler(object):
             self.set_secure_cookie(self.settings.get('session_cookie_name', 'session_id'),
                                    self.session.session_id,
                                    expires_days=None,
-                                   expires=datetime.datetime.fromtimestamp(self.session.expires),
+                                   expires=datetime.datetime.utcfromtimestamp(self.session.expires),
                                    path=self.settings.get('session_cookie_path', '/'),
                                    domain=self.settings.get('session_cookie_domain'))
 
@@ -787,7 +787,7 @@ class RequestHandler(object):
     def _create_session(self):
         settings = self.application.settings # just a shortcut
         url = settings.get('session_storage', 'file://') # default to file storage
-        expires = session.BaseSession._value_to_epoch_time(settings.get('session_age'))
+        expires = settings.get('session_age')
         session_id = self.get_secure_cookie(settings.get('session_cookie_name', 'session_id'))
         new_session = None
 
@@ -829,12 +829,11 @@ class RequestHandler(object):
         # ...and client-side
         self.set_secure_cookie(settings.get('session_cookie_name', 'session_id'),
                                new_session.session_id,
-                               expires=datetime.datetime.fromtimestamp(expires),
+                               expires_days=None,
+                               expires=datetime.datetime.utcfromtimestamp(new_session.expires),
                                domain=settings.get('session_cookie_domain'),
                                path=settings.get('session_cookie_path', '/')) 
         return new_session
-
-
 
 
 def asynchronous(method):
