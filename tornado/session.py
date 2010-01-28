@@ -40,11 +40,19 @@ session_storage: a string specifying the session storage;
                  only two storage engines are available at the moment, file
                  or MySQL based
 
-                 if you want to store session data in a file, set this to
-                 a url of the following format:
+                 if you want to store session data in a single file, set
+                 this to a url of the following format:
                  'file:///path/to/session_storage_file'
-                 be sure the Tornado process has read & write access to this
-                 file
+
+                 another choice is to store session in a directory, where
+                 each session is stored in a separate, single file; to
+                 enable this behaviour, set this setting to:
+                 dir:///path/to/session/storage/directory
+                 each session will be mapped to a file following the
+                 <session_id>.session format, saved in this directory
+
+                 be sure the Tornado process has read & write access to
+                 this path, whether it's a file or a directory
 
                  if you want to use MySQL, set it in this format:
                  'mysql://username:password[@hostname[:port]]/database'
@@ -222,7 +230,7 @@ class FileSession(BaseSession):
     is created in the OS' standard location.
     
     Be aware that file-based sessions can get really slow with many stored
-    session as any save() or delete() action has to cycle through the whole
+    session as any action (save, load, delete) has to cycle through the whole
     file. """
     def __init__(self, file_path, **kwargs):
         super(FileSession, self).__init__(**kwargs)
@@ -315,7 +323,73 @@ class FileSession(BaseSession):
         file_path = load.pop('file_path')
         return FileSession(file_path, **load)
 
-                
+
+class DirSession(BaseSession):
+    """A "directory" based session storage. Every session is stored in a
+    separate file, so one file represents one session. The files are
+    named as the session_id plus '.session' suffix. Data is stored in
+    CSV format. Make sure the directory where the files are stored is
+    readable and writtable to the Tornado process."""
+    def __init__(self, dir_path, **kwargs):
+        super(DirSession, self).__init__(**kwargs)
+        self.dir_path = dir_path
+        if not kwargs.has_key('session_id'):
+            self.save()
+
+    def save(self):
+        """Save the session to a file. The algorithm first writes to a temp
+        file created in the sessions directory. When all data is written,
+        it renames it to the correct name (<session_id>.session)."""
+        if not self.dirty:
+            return
+        session_file = os.path.join(self.dir_path, self.session_id+'.session')
+        # write to temp file and then rename
+        temp_fd, temp_name = tempfile.mkstemp(dir=self.dir_path)
+        temp_file = os.fdopen(temp_fd, 'w+b')
+        writer = csv.writer(temp_file)
+        writer.writerow([self.session_id,
+                         self.serialize(),
+                         self.expires,
+                         self.ip_address,
+                         self.user_agent])
+        temp_file.close()
+        os.rename(temp_name, session_file)
+        self.dirty = False
+
+    @staticmethod
+    def load(session_id, directory):
+        """Load session from file storage."""
+        try:
+            session_file_name = os.path.join(directory, session_id+'.session')
+            if os.path.isfile(session_file_name):
+                session_file = open(session_file_name, 'rb')
+                reader = csv.reader(session_file)
+                l = reader.next()
+                kwargs = DirSession.deserialize(l[1])
+                return DirSession(directory, **kwargs)
+        except:
+            return None
+
+    def delete(self):
+        """Deletes the session file."""
+        session_file = os.path.join(self.dir_path, self.session_id+'.session')
+        if os.path.isfile(session_file):
+            os.remove(session_file)
+
+    def serialize(self):
+        dump = {'session_id': self.session_id,
+                'data': self.data,
+                'expires': self.expires,
+                'ip_address': self.ip_address,
+                'user_agent': self.user_agent,
+                'security_model': self.security_model}
+        return base64.encodestring(pickle.dumps(dump))
+
+    @staticmethod
+    def deserialize(datastring):
+        return pickle.loads(base64.decodestring(datastring))
+
+
 class MySQLSession(BaseSession):
     """Enables MySQL to act as a session storage engine. It uses Tornado's
     MySQL wrapper from database.py.

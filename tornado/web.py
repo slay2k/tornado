@@ -810,6 +810,16 @@ class RequestHandler(object):
                 raise NotImplemented
             elif url.startswith('mongodb'):
                 raise NotImplemented
+            elif url.startswith('dir'):
+                dir_path = url[6:]
+                old_session = session.DirSession.load(session_id, dir_path)
+                if old_session is None: # create new session
+                    new_session = session.DirSession(
+                        dir_path,
+                        security_model=settings.get('session_security_model', []),
+                        expires=expires,
+                        ip_address=self.request.remote_ip,
+                        user_agent=self.request.headers.get('User-Agent'))
         else:
             path = url[7:]
             old_session = session.FileSession.load(session_id, path)
