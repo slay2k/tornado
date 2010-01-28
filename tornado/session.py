@@ -29,8 +29,7 @@ session_age: how long should the session be valid (applies also to cookies);
              string, datetime, timedelta, function, if none of these, uses
              None as default; for more info, look at _value_to_epoch_time() in
              BaseSession class)
-             default is None, which means the cookie expires on browser close
-             and lasts 30 mins on the server
+             default is 15 mins
 session_cookie_name: the name of the cookie, which stores the session_id;
                      default is 'session_id'
 session_cookie_path: path attribute for the session cookie;
@@ -161,8 +160,8 @@ class BaseSession(collections.MutableMapping):
         elif type(value) is types.FunctionType:
             return value()
         else:
-            then = datetime.datetime.now() + datetime.timedelta(seconds=1800) # 30 mins
-            return time.mktime(then.timetuple())
+            then = datetime.datetime.now() + datetime.timedelta(seconds=900) # 15 mins
+            return int(time.mktime(then.timetuple()))
 
     def invalidate(self): 
         """Destorys the session, both server-side and client-side.
