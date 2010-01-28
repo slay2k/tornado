@@ -87,15 +87,6 @@ class RequestHandler(object):
         self.application = application
         self.request = request
         self.session = self._create_session()
-        self.session._set_cookie_actions(
-            delete=functools.partial(self.clear_cookie,
-                                     self.application.settings.get('session_cookie_name', 'session_id'),
-                                     path=self.application.settings.get('session_cookie_path', '/')),
-            refresh=functools.partial(self.set_secure_cookie,
-                                      self.application.settings.get('session_cookie_name', 'session_id'),
-                                      expires_days=None,
-                                      expires=None,
-                                      path=self.application.settings.get('session_cookie_path', '/')))
         self._headers_written = False
         self._finished = False
         self._auto_finish = True
@@ -481,6 +472,16 @@ class RequestHandler(object):
             if "Content-Length" not in self._headers:
                 content_length = sum(len(part) for part in self._write_buffer)
                 self.set_header("Content-Length", content_length)
+
+        if self.session._delete_cookie:
+            self.clear_cookie(self.settings.get('session_cookie_name', 'session_id'))
+        elif self.session._refresh_cookie:
+            self.set_secure_cookie(self.settings.get('session_cookie_name', 'session_id'),
+                                   self.session.session_id,
+                                   expires_days=None,
+                                   expires=datetime.datetime.fromtimestamp(self.session.expires),
+                                   path=self.settings.get('session_cookie_path', '/'),
+                                   domain=self.settings.get('session_cookie_domain'))
 
         if not self.application._wsgi:
             self.flush(include_footers=True)

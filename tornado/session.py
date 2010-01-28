@@ -110,13 +110,9 @@ class BaseSession(collections.MutableMapping):
         self.ip_address = ip_address
         self.user_agent = user_agent
         self.security_model = security_model
-        self._delete_cookie_action = None
-        self._refresh_cookie_action = None
+        self._delete_cookie = False
+        self._refresh_cookie = False
         self.dirty = False
-
-    def _set_cookie_actions(self, delete, refresh):
-        self._delete_cookie_action = delete
-        self._refresh_cookie_action = refresh
 
     def __repr__(self):
         return '<session id: %s data: %s>' % (self.session_id, self.data)
@@ -130,7 +126,6 @@ class BaseSession(collections.MutableMapping):
     def __setitem__(self, key, value):
         self.data[key] = value
         self.dirty = True
-        # TODO: if dirty, save automagically (that should be done in web.py, probably)
 
     def __delitem__(self, key):
         del self.data[key]
@@ -174,7 +169,7 @@ class BaseSession(collections.MutableMapping):
         As a best practice, it should be used when the user logs out of
         the application."""
         self.delete() # remove server-side
-        self._delete_cookie_action() # remove client-side
+        self._delete_cookie = True # remove client-side
     
     def refresh(self, to_time=None, new_session_id=False, save=True): # the oposite of invalidate
         """Prolongs the session validity. You can specify for how long passing a
@@ -191,8 +186,7 @@ class BaseSession(collections.MutableMapping):
             self.session_id = self._generate_session_id()
         if new_session_id or save:
             self.save() # store server-side
-        self._refresh_cookie_action(self.session_id,
-                                    expires=datetime.datetime.fromtimestamp(self.expires)) # store client-side
+        self._refresh_cookie = True # store client-side
 
     def save(self):
         # TODO: should also refresh the expiry on save (?)
