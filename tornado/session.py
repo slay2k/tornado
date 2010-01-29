@@ -26,7 +26,7 @@ application:
 
 session_age: how long should the session be valid (applies also to cookies);
              the value can be anything, which is convertible to integer (number,
-             string, datetime, timedelta, function, if none of these, uses
+             string, datetime, timedelta, if none of these, uses
              None as default; for more info, look at _value_to_epoch_time() in
              BaseSession class)
              default is 15 mins
@@ -168,8 +168,6 @@ class BaseSession(collections.MutableMapping):
         elif isinstance(value, datetime.timedelta):
             then = datetime.datetime.now() + value
             return int(time.mktime(then.timetuple()))
-        elif type(value) is types.FunctionType:
-            return value()
         else:
             then = datetime.datetime.now() + datetime.timedelta(seconds=900) # 15 mins
             return int(time.mktime(then.timetuple()))
