@@ -482,7 +482,7 @@ class RequestHandler(object):
             self.set_secure_cookie(self.settings.get('session_cookie_name', 'session_id'),
                                    self.session.session_id,
                                    expires_days=None,
-                                   expires=datetime.datetime.utcfromtimestamp(self.session.expires),
+                                   expires=datetime.datetime.utcfromtimestamp(float(self.session.expires)),
                                    path=self.settings.get('session_cookie_path', '/'),
                                    domain=self.settings.get('session_cookie_domain'))
 
