@@ -285,15 +285,19 @@ class FileSession(BaseSession):
     @staticmethod
     def load(session_id, path):
         """Loads a session from the specified file."""
-        reader_file = open(path, 'rb')
-        reader = csv.DictReader(reader_file,
-                                fieldnames=['session_id', 'data', 'expires', 'ip_address', 'user-agent'])
-        for line in reader:
-            if line['session_id'] == session_id:
-                reader_file.close()                
-                return FileSession.deserialize(line['data'])
-        reader_file.close()
-        return None
+        try:
+            reader_file = open(path, 'rb')
+            reader = csv.DictReader(reader_file,
+                                    fieldnames=['session_id', 'data', 'expires', 'ip_address', 'user-agent'])
+            for line in reader:
+                if line['session_id'] == session_id:
+                    reader_file.close()
+                    kwargs = FileSession.deserialize(line['data'])
+                    return FileSession(path, **kwargs)
+            reader_file.close()
+            return None
+        except:
+            return None
 
     def delete(self):
         """Remove the session from the storage file. File manipulation is
