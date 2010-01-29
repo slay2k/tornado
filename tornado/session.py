@@ -216,11 +216,17 @@ class BaseSession(collections.MutableMapping):
         pass
 
     def serialize(self):
-        pass
+        dump = {'session_id': self.session_id,
+                'data': self.data,
+                'expires': self.expires,
+                'ip_address': self.ip_address,
+                'user_agent': self.user_agent,
+                'security_model': self.security_model}
+        return base64.encodestring(pickle.dumps(dump))
 
     @staticmethod
     def deserialize(datastring):
-        pass
+        return pickle.loads(base64.decodestring(datastring))
 
 
 class FileSession(BaseSession):
@@ -307,22 +313,6 @@ class FileSession(BaseSession):
         writer_temp_file.close()
         os.rename(writer_temp, self.file_path) # rename the temporary holder to the session file
 
-    def serialize(self):
-        dump = {'session_id': self.session_id,
-                'data': self.data,
-                'expires': self.expires,
-                'ip_address': self.ip_address,
-                'user_agent': self.user_agent,
-                'security_model': self.security_model,
-                'file_path': self.file_path}
-        return base64.encodestring(pickle.dumps(dump))        
-
-    @staticmethod
-    def deserialize(datastring):
-        load = pickle.loads(base64.decodestring(datastring))
-        file_path = load.pop('file_path')
-        return FileSession(file_path, **load)
-
 
 class DirSession(BaseSession):
     """A "directory" based session storage. Every session is stored in a
@@ -375,19 +365,6 @@ class DirSession(BaseSession):
         session_file = os.path.join(self.dir_path, self.session_id+'.session')
         if os.path.isfile(session_file):
             os.remove(session_file)
-
-    def serialize(self):
-        dump = {'session_id': self.session_id,
-                'data': self.data,
-                'expires': self.expires,
-                'ip_address': self.ip_address,
-                'user_agent': self.user_agent,
-                'security_model': self.security_model}
-        return base64.encodestring(pickle.dumps(dump))
-
-    @staticmethod
-    def deserialize(datastring):
-        return pickle.loads(base64.decodestring(datastring))
 
 
 class MySQLSession(BaseSession):
@@ -462,7 +439,8 @@ class MySQLSession(BaseSession):
             select session_id, data, expires, ip_address, user_agent
             from tornado_sessions where session_id = %s;""",  session_id)
             if data:
-                return MySQLSession.deserialize(data['data'], connection)
+                kwargs = MySQLSession.deserialize(data['data'])
+                return MySQLSession(connection, **kwargs)
             else:
                 return None
         except database.ProgrammingError:
@@ -473,20 +451,6 @@ class MySQLSession(BaseSession):
         """Remove session data from the database."""
         self.connection.execute("""
         delete from tornado_sessions where session_id = %s;""", self.session_id)
-
-    def serialize(self):
-        dump = {'session_id': self.session_id,
-                'data': self.data,
-                'expires': self.expires,
-                'ip_address': self.ip_address,
-                'user_agent': self.user_agent,
-                'security_model': self.security_model}
-        return base64.encodestring(pickle.dumps(dump))
-
-    @staticmethod
-    def deserialize(datastring, connection):
-        load = pickle.loads(base64.decodestring(datastring))
-        return MySQLSession(connection, **load)
 
 
 # possible future engines for session storage
