@@ -843,7 +843,7 @@ class RequestHandler(object):
         self.set_secure_cookie(settings.get('session_cookie_name', 'session_id'),
                                new_session.session_id,
                                expires_days=None,
-                               expires=datetime.datetime.utcfromtimestamp(new_session.expires),
+                               expires=datetime.datetime.utcfromtimestamp(float(new_session.expires)),
                                domain=settings.get('session_cookie_domain'),
                                path=settings.get('session_cookie_path', '/')) 
         return new_session
