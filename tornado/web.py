@@ -794,7 +794,8 @@ class RequestHandler(object):
         kw = {'security_model': settings.get('session_security_model', []),
               'expires': settings.get('session_age', 900),
               'ip_address': self.request.remote_ip,
-              'user_agent': self.request.headers.get('User-Agent')
+              'user_agent': self.request.headers.get('User-Agent'),
+              'regeneration_interval': settings.get('session_regeneration_interval', 240)
               }
         new_session = None
         old_session = None
@@ -824,7 +825,9 @@ class RequestHandler(object):
                 new_session = session.FileSession(file_path, **kw)
 
         if old_session is not None:
-            # TODO: security checks, session regeneration
+            if old_session._should_regenerate():
+                old_session.refresh(new_session_id=True)
+            # TODO: security checks
             return old_session
 
         # store the newly created session server-side and client-side

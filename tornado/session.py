@@ -30,6 +30,19 @@ session_age: how long should the session be valid (applies also to cookies);
              None as default; for more info, look at _value_to_epoch_time() in
              BaseSession class)
              default is 15 mins
+session_regeneration_interval: period, after which the session_id should be
+                               regenerated; when the session creation time + period
+                               exceed current time, a new session is stored
+                               server-side (the sesion data remain unchanged) and
+                               the client cookie is refreshed; the old session
+                               is no longer valid
+                               session regeneration is used to strenghten security
+                               and prevent session hijacking; default interval
+                               is 4 minutes, if you don't want session regeneration
+                               set this setting to None, altough I recommend
+                               leaving it turned on
+                               the setting accepts integer, string or timedelta values,
+                               read TODO: FCE name documentation for more info
 session_cookie_name: the name of the cookie, which stores the session_id;
                      default is 'session_id'
 session_cookie_path: path attribute for the session cookie;
@@ -105,7 +118,8 @@ class BaseSession(collections.MutableMapping):
     and define save(), load(), delete(), serialize() and deserialize().
     For inspiration, check out the FileSession or MySQLSession class."""
     def __init__(self, session_id=None, data=None, security_model=[], expires=None,
-                 ip_address=None, user_agent=None, **kwargs):
+                 ip_address=None, user_agent=None, regeneration_interval=None,
+                 next_regeneration=None, **kwargs):
         # if session_id is True, we're loading a previously initialized session
         if session_id:
             self.session_id = session_id
@@ -121,6 +135,8 @@ class BaseSession(collections.MutableMapping):
         self.ip_address = ip_address
         self.user_agent = user_agent
         self.security_model = security_model
+        self.regeneration_interval = regeneration_interval
+        self.next_regeneration = next_regeneration or self._next_regeneration_at()
         self._delete_cookie = False
         self._refresh_cookie = False
 
@@ -172,6 +188,29 @@ class BaseSession(collections.MutableMapping):
             then = datetime.datetime.now() + datetime.timedelta(seconds=900) # 15 mins
             return int(time.mktime(then.timetuple()))
 
+    def _should_regenerate(self):
+        """Determine if the session_id should be regenerated."""
+        return datetime.datetime.now() > self.next_regeneration
+
+    def _next_regeneration_at(self):
+        """Return a datetime object when the next session id regeneration
+        should occur."""
+        # convert whatever value to an timedelta (period in seconds)
+        # store it in self.regeneration_interval to prevent
+        # converting in later calls and return the datetime
+        # of next planned regeneration
+        v = self.regeneration_interval
+        if isinstance(v, datetime.timedelta):
+            pass
+        elif isinstance(v, (int, long)):
+            self.regeneration_interval = datetime.timedelta(seconds=v)
+        elif isinstance(v, basestring):
+            self.regeneration_interval = datetime.timedelta(seconds=int(v))
+        else:
+            self.regeneration_interval = datetime.timedelta(seconds=240) # 4 mins
+
+        return datetime.datetime.now() + self.regeneration_interval
+
     def invalidate(self): 
         """Destorys the session, both server-side and client-side.
         As a best practice, it should be used when the user logs out of
@@ -192,6 +231,7 @@ class BaseSession(collections.MutableMapping):
         if new_session_id:
             self.delete()
             self.session_id = self._generate_session_id()
+            self.next_regeneration = self._next_regeneration_at()
         if new_session_id or save:
             self.dirty = True # to force save
             self.save() # store server-side
@@ -219,7 +259,9 @@ class BaseSession(collections.MutableMapping):
                 'expires': self.expires,
                 'ip_address': self.ip_address,
                 'user_agent': self.user_agent,
-                'security_model': self.security_model}
+                'security_model': self.security_model,
+                'regeneration_interval': self.regeneration_interval,
+                'next_regeneration': self.next_regeneration}
         return base64.encodestring(pickle.dumps(dump))
 
     @staticmethod
@@ -359,6 +401,7 @@ class DirSession(BaseSession):
                 l = reader.next()
                 kwargs = DirSession.deserialize(l[1])
                 return DirSession(directory, **kwargs)
+            return None
         except:
             return None
 
@@ -443,10 +486,8 @@ class MySQLSession(BaseSession):
             if data:
                 kwargs = MySQLSession.deserialize(data['data'])
                 return MySQLSession(connection, **kwargs)
-            else:
-                return None
-        except database.ProgrammingError:
-            # table does not exist yet, will be created on first save()
+            return None
+        except:
             return None
 
     def delete(self):
