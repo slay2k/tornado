@@ -86,7 +86,10 @@ class RequestHandler(object):
     def __init__(self, application, request, transforms=None):
         self.application = application
         self.request = request
-        self.session = self._create_session()
+        if isinstance(self, StaticFileHandler):
+            self.session = None
+        else:
+            self.session = self._create_session()
         self._headers_written = False
         self._finished = False
         self._auto_finish = True
@@ -473,9 +476,9 @@ class RequestHandler(object):
                 content_length = sum(len(part) for part in self._write_buffer)
                 self.set_header("Content-Length", content_length)
 
-        if self.session._delete_cookie:
+        if self.session is not None and self.session._delete_cookie:
             self.clear_cookie(self.settings.get('session_cookie_name', 'session_id'))
-        elif self.session._refresh_cookie:
+        elif self.session is not None and self.session._refresh_cookie:
             self.set_secure_cookie(self.settings.get('session_cookie_name', 'session_id'),
                                    self.session.session_id,
                                    expires_days=None,
@@ -488,7 +491,7 @@ class RequestHandler(object):
             self.request.finish()
             self._log()
 
-        if self.session.dirty:
+        if self.session is not None and self.session.dirty:
             self.session.save()
         self._finished = True
 
