@@ -66,9 +66,6 @@ session_security_model: not implemented yet;
                         mechanisms to prevent session hijacking, based on
                         users IP address, User-Agent, GeoIP or whatever
                         other data; suggestions welcomed
-
-
-              
 """
 
 import base64
@@ -203,16 +200,19 @@ class BaseSession(collections.MutableMapping):
         self._refresh_cookie = True # store client-side
 
     def save(self):
-        # TODO: should also refresh the expiry on save (?)
+        """Save the session data and metadata to the backend storage
+        if necessary (self.dirty == True). On successful save set
+        dirty to False."""
         pass
 
     @staticmethod
     def load(session_id, location):
-        # the function should load a stored session, creating a new clean
-        # one is a fail-save branch
+        """Load the stored session from storage backend or return
+        None if the session was not found, in case of stale cookie."""
         pass
 
-    def delete(self): # remove only from the backend storage
+    def delete(self):
+        """Remove all data representing the session from backend storage."""
         pass
 
     def serialize(self):
