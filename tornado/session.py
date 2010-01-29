@@ -85,7 +85,6 @@ import base64
 import csv
 import collections
 import datetime
-import database
 import os
 import cPickle as pickle
 import re

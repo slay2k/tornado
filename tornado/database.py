@@ -177,4 +177,3 @@ for field_type in \
 # Alias some common MySQL exceptions
 IntegrityError = MySQLdb.IntegrityError
 OperationalError = MySQLdb.OperationalError
-ProgrammingError = MySQLdb.ProgrammingError
