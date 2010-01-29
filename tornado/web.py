@@ -790,8 +790,8 @@ class RequestHandler(object):
     def _create_session(self):
         settings = self.application.settings # just a shortcut
         url = settings.get('session_storage', 'file://') # default to file storage
-        kw = {'session_id': self.get_secure_cookie(settings.get('session_cookie_name', 'session_id')),
-              'security_model': settings.get('session_security_model', []),
+        session_id = self.get_secure_cookie(settings.get('session_cookie_name', 'session_id'))
+        kw = {'security_model': settings.get('session_security_model', []),
               'expires': settings.get('session_age', 900),
               'ip_address': self.request.remote_ip,
               'user_agent': self.request.headers.get('User-Agent')
@@ -801,7 +801,7 @@ class RequestHandler(object):
 
         if url and not url.startswith('file'):
             if url.startswith('mysql'):
-                old_session = session.MySQLSession.load(kw['session_id'], settings['_db'])
+                old_session = session.MySQLSession.load(session_id, settings['_db'])
                 if old_session is None: # create a new session
                     new_session = session.MySQLSession(settings['_db'], **kw)
             elif url.startswith('postgresql'):
@@ -814,12 +814,12 @@ class RequestHandler(object):
                 raise NotImplemented
             elif url.startswith('dir'):
                 dir_path = url[6:]
-                old_session = session.DirSession.load(kw['session_id'], dir_path)
+                old_session = session.DirSession.load(session_id, dir_path)
                 if old_session is None: # create new session
                     new_session = session.DirSession(dir_path, **kw)
         else:
             file_path = url[7:]
-            old_session = session.FileSession.load(kw['session_id'], file_path)
+            old_session = session.FileSession.load(session_id, file_path)
             if old_session is None: # create new session
                 new_session = session.FileSession(file_path, **kw)
 
