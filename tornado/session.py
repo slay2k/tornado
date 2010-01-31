@@ -25,11 +25,10 @@ The session module introduces new settings available to the
 application:
 
 session_age: how long should the session be valid (applies also to cookies);
-             the value can be anything, which is convertible to integer (number,
-             string, datetime, timedelta, if none of these, uses
-             None as default; for more info, look at _value_to_epoch_time() in
-             BaseSession class)
+             the value can be anything an integer, string or datetime.timedelta;
              default is 15 mins
+             check out _expires_at for additional info
+
 session_regeneration_interval: period, after which the session_id should be
                                regenerated; when the session creation time + period
                                exceed current time, a new session is stored
@@ -38,17 +37,19 @@ session_regeneration_interval: period, after which the session_id should be
                                is no longer valid
                                session regeneration is used to strenghten security
                                and prevent session hijacking; default interval
-                               is 4 minutes, if you don't want session regeneration
-                               set this setting to None, altough I recommend
-                               leaving it turned on
+                               is 4 minutes
                                the setting accepts integer, string or timedelta values,
-                               read TODO: FCE name documentation for more info
+                               read _next_regeneration_at() documentation for more info
+
 session_cookie_name: the name of the cookie, which stores the session_id;
                      default is 'session_id'
+
 session_cookie_path: path attribute for the session cookie;
                      default is '/'
+
 session_cookie_domain: domain attribute for the session cookie;
                        default is None
+
 session_storage: a string specifying the session storage;
                  only two storage engines are available at the moment, file
                  or MySQL based
@@ -74,6 +75,7 @@ session_storage: a string specifying the session storage;
                  to create a new temporary file according to yours OS'
                  conventions (on Unix-like systems in the /tmp directory);
                  the file will have 'tornado_sessions_' as name prefix
+
 session_security_model: not implemented yet;
                         the plan to future versions is to provide some basic
                         mechanisms to prevent session hijacking, based on
@@ -101,34 +103,32 @@ class BaseSession(collections.MutableMapping):
         def get(self):
             var = self.session['key']
             self.session['another_key'] = 'value'
-            self.session.save()
 
-    (Unfortunately, for now, you have to explicitly call session.save().
-    This will be fixed in a later revision.)
+    Session is automatically saved on handler finish. Session expiration
+    is updated with every request. If configured, session ID is
+    regenerated periodically.
 
-    You can also access the following attributes:
-        session_id - a unique, random string identifier of the session,
-                     stored in the user's cookie
-        security_model - not implemented yet; a planned feature to prevent
-                         (or at least make more difficult) session hijacking
-        expires - timestamp (in sec since epoch) when the session will expire        
-        
+    The session_id attribute stores a unique, random, 64 characters long
+    string serving as an indentifier.
+
     To create a new storage system for the sessions, subclass BaseSession
-    and define save(), load(), delete(), serialize() and deserialize().
-    For inspiration, check out the FileSession or MySQLSession class."""
+    and define save(), load() and delete(). For inspiration, check out any
+    of the already available classes and documentation to aformentioned functions."""
     def __init__(self, session_id=None, data=None, security_model=[], expires=None,
-                 ip_address=None, user_agent=None, regeneration_interval=None,
-                 next_regeneration=None, **kwargs):
+                 duration=None, ip_address=None, user_agent=None,
+                 regeneration_interval=None, next_regeneration=None, **kwargs):
         # if session_id is True, we're loading a previously initialized session
         if session_id:
             self.session_id = session_id
             self.data = data
+            self.duration = duration
             self.expires = expires
             self.dirty = False
         else:
             self.session_id = self._generate_session_id()
             self.data = {}
-            self.expires = self._value_to_epoch_time(expires)
+            self.duration = duration
+            self.expires = self._expires_at()
             self.dirty = True
 
         self.ip_address = ip_address
@@ -137,7 +137,6 @@ class BaseSession(collections.MutableMapping):
         self.regeneration_interval = regeneration_interval
         self.next_regeneration = next_regeneration or self._next_regeneration_at()
         self._delete_cookie = False
-        self._refresh_cookie = False
 
     def __repr__(self):
         return '<session id: %s data: %s>' % (self.session_id, self.data)
@@ -168,23 +167,23 @@ class BaseSession(collections.MutableMapping):
     def _generate_session_id(cls):
         return os.urandom(32).encode('hex') # 256 bits of entropy
 
-    @classmethod
-    def _value_to_epoch_time(self, value=None):
-        # convert whatever value to time since epoch
-        if isinstance(value, (int, long)):
-            then = datetime.datetime.now() + datetime.timedelta(seconds=value)
-            return int(time.mktime(then.timetuple()))
-        elif isinstance(value, basestring):
-            then = datetime.datetime.now() + datetime.timedelta(seconds=int(value))
-            return int(time.mktime(then.timetuple()))
-        elif isinstance(value, datetime.datetime):
-            return int(time.mktime(value.timetuple()))
-        elif isinstance(value, datetime.timedelta):
-            then = datetime.datetime.now() + value
-            return int(time.mktime(then.timetuple()))
+    def _is_expired(self):
+        """Check if the session has expired."""
+        return datetime.datetime.now() > self.expires
+
+    def _expires_at(self):
+        """Find out the expiration time. Returns datetime.datetime."""
+        v = self.duration
+        if isinstance(v, datetime.timedelta):
+            pass
+        elif isinstance(v, (int, long)):
+            self.duration =  datetime.timedelta(seconds=v)
+        elif isinstance(v, basestring):
+            self.duration = datetime.timedelta(seconds=int(v))
         else:
-            then = datetime.datetime.now() + datetime.timedelta(seconds=900) # 15 mins
-            return int(time.mktime(then.timetuple()))
+            self.duration = datetime.timedelta(seconds=900) # 15 mins
+
+        return datetime.datetime.now() + self.duration
 
     def _should_regenerate(self):
         """Determine if the session_id should be regenerated."""
@@ -216,24 +215,25 @@ class BaseSession(collections.MutableMapping):
         self.delete() # remove server-side
         self._delete_cookie = True # remove client-side
     
-    def refresh(self, to_time=None, new_session_id=False, save=True): # the oposite of invalidate
+    def refresh(self, duration=None, new_session_id=False): # the opposite of invalidate
         """Prolongs the session validity. You can specify for how long passing a
-        value in the to_time argument (the same rules as for session_age apply).
+        value in the duration argument (the same rules as for session_age apply).
+        Be aware that henceforward this particular session may have different
+        expiry date, not respecting the global setting. 
         
         If new_session_id is True, a new session identifier will be generated.
-        This should be used e.g. on user authentication for security reasons.
-
-        If you don't want to save the session server-side, only update the
-        browser's cookie, pass save=False when calling the function."""
-        self.expires = self._value_to_epoch_time(to_time)
+        This should be used e.g. on user authentication for security reasons."""
+        if duration:
+            self.duration = duration
+            self.expires = self._expires_at()
+        else:
+            self.expires = self._expires_at()
         if new_session_id:
             self.delete()
             self.session_id = self._generate_session_id()
             self.next_regeneration = self._next_regeneration_at()
-        if new_session_id or save:
-            self.dirty = True # to force save
-            self.save() # store server-side
-        self._refresh_cookie = True # store client-side
+        self.dirty = True # force save
+        self.save()
 
     def save(self):
         """Save the session data and metadata to the backend storage
@@ -254,6 +254,7 @@ class BaseSession(collections.MutableMapping):
     def serialize(self):
         dump = {'session_id': self.session_id,
                 'data': self.data,
+                'duration': self.duration,
                 'expires': self.expires,
                 'ip_address': self.ip_address,
                 'user_agent': self.user_agent,
@@ -300,7 +301,7 @@ class FileSession(BaseSession):
             if line['session_id'] == self.session_id:
                 writer.writerow({'session_id': self.session_id,
                                  'data': self.serialize(),
-                                 'expires': self.expires,
+                                 'expires': int(time.mktime(self.expires.timetuple())),
                                  'ip_address': self.ip_address,
                                  'user-agent': self.user_agent})
                 found = True
@@ -312,7 +313,7 @@ class FileSession(BaseSession):
             # data attribute
             writer.writerow({'session_id': self.session_id,
                              'data': self.serialize(),
-                             'expires': self.expires,
+                             'expires': int(time.mktime(self.expires.timetuple())),
                              'ip_address': self.ip_address,
                              'user-agent': self.user_agent})
         reader_file.close()
@@ -381,7 +382,7 @@ class DirSession(BaseSession):
         writer = csv.writer(temp_file)
         writer.writerow([self.session_id,
                          self.serialize(),
-                         self.expires,
+                         int(time.mktime(self.expires.timetuple())),
                          self.ip_address,
                          self.user_agent])
         temp_file.close()
@@ -470,8 +471,8 @@ class MySQLSession(BaseSession):
             on duplicate key update
             session_id=values(session_id), data=values(data), expires=values(expires),
             ip_address=values(ip_address), user_agent=values(user_agent);""",
-            self.session_id, self.serialize(), self.expires, self.ip_address,
-            self.user_agent)
+            self.session_id, self.serialize(), int(time.mktime(self.expires.timetuple())),
+            self.ip_address, self.user_agent)
         self.dirty = False
 
     @staticmethod

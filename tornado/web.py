@@ -478,11 +478,12 @@ class RequestHandler(object):
 
         if self.session is not None and self.session._delete_cookie:
             self.clear_cookie(self.settings.get('session_cookie_name', 'session_id'))
-        elif self.session is not None and self.session._refresh_cookie:
+        elif self.session is not None:
+            self.session.refresh() # advance expiry time and save session
             self.set_secure_cookie(self.settings.get('session_cookie_name', 'session_id'),
                                    self.session.session_id,
                                    expires_days=None,
-                                   expires=datetime.datetime.utcfromtimestamp(float(self.session.expires)),
+                                   expires=self.session.expires,
                                    path=self.settings.get('session_cookie_path', '/'),
                                    domain=self.settings.get('session_cookie_domain'))
 
@@ -491,8 +492,6 @@ class RequestHandler(object):
             self.request.finish()
             self._log()
 
-        if self.session is not None and self.session.dirty:
-            self.session.save()
         self._finished = True
 
     def send_error(self, status_code=500, **kwargs):
@@ -792,7 +791,7 @@ class RequestHandler(object):
         url = settings.get('session_storage', 'file://') # default to file storage
         session_id = self.get_secure_cookie(settings.get('session_cookie_name', 'session_id'))
         kw = {'security_model': settings.get('session_security_model', []),
-              'expires': settings.get('session_age', 900),
+              'duration': settings.get('session_age', 900),
               'ip_address': self.request.remote_ip,
               'user_agent': self.request.headers.get('User-Agent'),
               'regeneration_interval': settings.get('session_regeneration_interval', 240)
@@ -803,7 +802,7 @@ class RequestHandler(object):
         if url and not url.startswith('file'):
             if url.startswith('mysql'):
                 old_session = session.MySQLSession.load(session_id, settings['_db'])
-                if old_session is None: # create a new session
+                if old_session is None or old_session._is_expired(): # create a new session
                     new_session = session.MySQLSession(settings['_db'], **kw)
             elif url.startswith('postgresql'):
                 raise NotImplemented
@@ -816,28 +815,20 @@ class RequestHandler(object):
             elif url.startswith('dir'):
                 dir_path = url[6:]
                 old_session = session.DirSession.load(session_id, dir_path)
-                if old_session is None: # create new session
+                if old_session is None or old_session._is_expired(): # create new session
                     new_session = session.DirSession(dir_path, **kw)
         else:
             file_path = url[7:]
             old_session = session.FileSession.load(session_id, file_path)
-            if old_session is None: # create new session
+            if old_session is None or old_session._is_expired(): # create new session
                 new_session = session.FileSession(file_path, **kw)
 
         if old_session is not None:
             if old_session._should_regenerate():
                 old_session.refresh(new_session_id=True)
-            # TODO: security checks
+                # TODO: security checks
             return old_session
 
-        # store the newly created session server-side and client-side
-        new_session.save()
-        self.set_secure_cookie(settings.get('session_cookie_name', 'session_id'),
-                               new_session.session_id,
-                               expires_days=None,
-                               expires=datetime.datetime.utcfromtimestamp(float(new_session.expires)),
-                               domain=settings.get('session_cookie_domain'),
-                               path=settings.get('session_cookie_path', '/')) 
         return new_session
 
 
