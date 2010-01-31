@@ -165,7 +165,6 @@ class BaseSession(collections.MutableMapping):
     def __len__(self):
         return len(self.data.keys())
 
-    @classmethod
     def _generate_session_id(cls):
         return os.urandom(32).encode('hex') # 256 bits of entropy
 
