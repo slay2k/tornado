@@ -812,6 +812,10 @@ class RequestHandler(object):
                 raise NotImplemented
             elif url.startswith('mongodb'):
                 raise NotImplemented
+            elif url.startswith('redis'):
+                old_session = session.RedisSession.load(session_id, settings['_db'])
+                if old_session is None or old_session._is_expired(): # create new session
+                    new_session = session.RedisSession(settings['_db'], **kw)
             elif url.startswith('dir'):
                 dir_path = url[6:]
                 old_session = session.DirSession.load(session_id, dir_path)
@@ -956,6 +960,12 @@ class Application(object):
             u, p, h, d = session.MySQLSession._parse_connection_details(
                 settings['session_storage'])
             settings['_db'] = database.Connection(h, d, user=u, password=p)
+        elif settings.get('session_storage').startswith('redis'):
+            try:
+                import redis
+                settings['_db'] = redis.Redis()
+            except ImportError:
+                pass
         self.handlers = []
         self.named_handlers = {}
         self.default_host = default_host

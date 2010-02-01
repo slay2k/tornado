@@ -51,8 +51,11 @@ session_cookie_domain: domain attribute for the session cookie;
                        default is None
 
 session_storage: a string specifying the session storage;
-                 only two storage engines are available at the moment, file
-                 or MySQL based
+                 available storage engines are: file-based sessions (all sessions
+                 are stored in a single file), directory-based sessions (every
+                 session is stored in a single file, all in one directory),
+                 MySQL-based sessions (sessions are stored in a MySQL database),
+                 Redis-based sessions (using Redis to store them, obviously)
 
                  if you want to store session data in a single file, set
                  this to a url of the following format:
@@ -70,6 +73,11 @@ session_storage: a string specifying the session storage;
 
                  if you want to use MySQL, set it in this format:
                  'mysql://username:password[@hostname[:port]]/database'
+
+                 to enable Redis as a storage engine, set this setting
+                 to 'redis://'
+                 remember that you have to have the redis python library
+                 available on your system to enable Redis-based sessions
 
                  if you don't specify any storage, the default behaviour is
                  to create a new temporary file according to yours OS'
@@ -495,9 +503,67 @@ class MySQLSession(BaseSession):
         delete from tornado_sessions where session_id = %s;""", self.session_id)
 
 
-# possible future engines for session storage
-class MemcachedSession(BaseSession):
-    pass
+try:
+    import redis
 
-class MongoDBSession(BaseSession):
+    class RedisSession(BaseSession):
+        """Class handling session storing in Redis.
+
+        It uses default Redis settings for host and port, without
+        authentication. The session_id is used as a key to a string
+        value holding the session details. The value has a format of
+        serialized_session_object_data:expires:ip_address:user_agent.
+
+        The save() and delete() methods both trigger BGSAVE. Be sure
+        you're aware of possible limitations (saving is not guaranteed
+        in the unfortunate case of a failure between the call to BGSAVE
+        and actual writing data to HDD by Redis)."""
+
+        def __init__(self, connection, **kwargs):
+            super(RedisSession, self).__init__(**kwargs)
+            self.connection = connection
+            if not kwargs.has_key('session_id'):
+                self.save()
+
+        def save(self):
+            """Save the current sesssion to Redis. The session_id
+            acts as a key. The value is constructed of colon separated values
+            serialized_data, expires, ip_address and user_agent. This
+            function calls BGSAVE on Redis, so it may terminate before
+            the data is actually updated on the HDD."""
+            if not self.dirty:
+                return
+            value = ':'.join((self.serialize(),
+                             str(int(time.mktime(self.expires.timetuple()))),
+                             self.ip_address,
+                             self.user_agent))
+            self.connection.set(self.session_id, value)
+            try:
+                self.connection.save(background=True)
+            except redis.ResponseError:
+                pass
+            self.dirty = False
+
+        @staticmethod
+        def load(session_id, connection):
+            """Load the stored session."""
+            if connection.exists(session_id) == 1:
+                try:
+                    data = connection.get(session_id)
+                    kwargs = RedisSession.deserialize(data.split(':', 1)[0])
+                    return RedisSession(connection, **kwargs)
+                except:
+                    return None
+            return None
+
+        def delete(self):
+            """Delete the session key-value from Redis. As save(),
+            delete() too calls BGSAVE."""
+            self.connection.delete(self.session_id)
+            try:
+                self.connection.save(background=True)
+            except redis.ResponseError:
+                pass
+
+except ImportError:
     pass
