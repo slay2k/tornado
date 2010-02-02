@@ -957,7 +957,7 @@ class Application(object):
             session_file = tempfile.NamedTemporaryFile(
                 prefix='tornado_sessions_', delete=False)
             settings['session_storage'] = 'file://'+session_file.name
-        if settings.get('session_storage').startswith('mysql'):
+        elif settings.get('session_storage').startswith('mysql'):
             # create a connection to MySQL 
             u, p, h, d = session.MySQLSession._parse_connection_details(
                 settings['session_storage'])
