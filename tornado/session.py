@@ -434,8 +434,8 @@ class MySQLSession(BaseSession):
         if not kwargs.has_key('session_id'):
             self.save()
 
-    @classmethod
-    def _parse_connection_details(cls, details):
+    @staticmethod
+    def _parse_connection_details(details):
         # mysql://username:password[@hostname[:port]]/db
 
         if details.find('@') != -1:
