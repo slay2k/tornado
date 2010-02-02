@@ -648,3 +648,74 @@ try:
 
 except ImportError:
     pass
+
+
+
+try:
+    import pylibmc
+
+    class MemcachedSession(BaseSession):
+        """Class responsible for Memcached stored sessions. It uses the
+        pylibmc library because it's fast. It communicates with the
+        memcached server through the binary protocol and uses async
+        I/O (no_block set to 1) to speed things up even more.
+
+        Session ID is used as a key. The value consists of colon
+        separated values of serializes session object, expiry timestamp,
+        IP address and User-Agent.
+
+        Values are stored with timeout set to the difference between
+        saving time and expiry time in seconds. Therefore, no
+        old sessions will be held in Memcached memory."""
+
+        def __init__(self, connection, **kwargs):
+            super(MemcachedSession, self).__init__(**kwargs)
+            self.connection = connection
+            if not kwargs.has_key('session_id'):
+                self.save()
+
+        @staticmethod
+        def _parse_connection_details(details):
+            if len(details) > 12:
+                return re.sub('\s+', '', details[12:]).split(',')
+            else:
+                return ['127.0.0.1']
+
+        def save(self):
+            """Write the session to Memcached. Session ID is used as
+            key, value is constructed as colon separated values of
+            serialized session, session expiry timestamp, ip address
+            and User-Agent.
+            The value is not stored indefinitely. It's expiration time
+            in seconds is calculated as the difference between the saving
+            time and session expiry."""
+            if not self.dirty:
+                return
+            value = ':'.join((self.serialize(),
+                              str(int(time.mktime(self.expires.timetuple()))),
+                              self.ip_address,
+                              self.user_agent))
+            # count how long should it last and then add or rewrite
+            live_sec = self.expires - datetime.datetime.now()
+            self.connection.set(self.session_id, value, time=live_sec.seconds) 
+            self.dirty = False
+
+        @staticmethod
+        def load(session_id, connection):
+            """Load the session from storage."""
+            try:
+                value = connection.get(session_id)
+                if value:
+                    data = value.split(':', 1)[0]
+                    kwargs = MemcachedSession.deserialize(data)
+                    return MemcachedSession(connection, **kwargs)
+            except:
+                return None
+            return None
+
+        def delete(self):
+            """Delete the session from storage."""
+            self.connection.delete(self.session_id)
+
+except ImportError:
+    pass

@@ -809,7 +809,9 @@ class RequestHandler(object):
             elif url.startswith('sqlite'):
                 raise NotImplemented
             elif url.startswith('memcached'):
-                raise NotImplemented
+                old_session = session.MemcachedSession.load(session_id, settings['_db'])
+                if old_session is None or old_session._is_expired(): # create new session
+                    new_session = session.MemcachedSession(settings['_db'], **kw)
             elif url.startswith('mongodb'):
                 old_session = session.MongoDBSession.load(session_id, settings['_db'])
                 if old_session is None or old_session._is_expired(): # create new session
@@ -977,6 +979,16 @@ class Application(object):
                 db = pymongo.database.Database(conn, d)
                 db.tornado_sessions.ensure_index('session_id', unique=True)
                 settings['_db'] = pymongo.collection.Collection(db, 'tornado_sessions')
+            except ImportError:
+                pass
+        elif settings.get('session_storage').startswith('memcached'):
+            try:
+                import pylibmc
+                servers = session.MemcachedSession._parse_connection_details(
+                    settings['session_storage'])
+                conn = pylibmc.Client(servers, binary=True)
+                conn.behaviors['no_block'] = 1 # async I/O
+                settings['_db'] = conn
             except ImportError:
                 pass
         self.handlers = []
