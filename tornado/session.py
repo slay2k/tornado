@@ -55,7 +55,9 @@ session_storage: a string specifying the session storage;
                  are stored in a single file), directory-based sessions (every
                  session is stored in a single file, all in one directory),
                  MySQL-based sessions (sessions are stored in a MySQL database),
-                 Redis-based sessions (using Redis to store them, obviously)
+                 Redis-based sessions (using Redis to store them, obviously),
+                 MongoDB-based sessions (each session stored as a document
+                 in MongoDB)
 
                  if you want to store session data in a single file, set
                  this to a url of the following format:
@@ -78,6 +80,12 @@ session_storage: a string specifying the session storage;
                  to 'redis://'
                  remember that you have to have the redis python library
                  available on your system to enable Redis-based sessions
+
+                 to use MongoDB as session storage, set this to a string
+                 following the format:
+                 'mongodb://[host[:port]]/db
+                 If no host or port is specified, defaults are used (localhost,
+                 27017)
 
                  if you don't specify any storage, the default behaviour is
                  to create a new temporary file according to yours OS'
@@ -564,6 +572,79 @@ try:
                 self.connection.save(background=True)
             except redis.ResponseError:
                 pass
+
+except ImportError:
+    pass
+
+
+try:
+    import pymongo
+
+    class MongoDBSession(BaseSession):
+        """Class implementing the MongoDB based session storage.
+        All sessions are stored in a collection "tornado_sessions" in the db
+        you specify in the session_storage setting.
+
+        The session document structure is following:
+        'session_id': session ID
+        'data': serialized session object
+        'expires': a timestamp of when the session expires, in sec since epoch
+        'user_agent': self-explanatory
+        An index on session_id is created automatically, on application's init.
+
+        The end_request() is called after every operation (save, load, delete),
+        to return the connection back to the pool.
+        """
+
+        def __init__(self, db, **kwargs):
+            super(MongoDBSession, self).__init__(**kwargs)
+            self.db = db # an instance of pymongo.collection.Collection
+            if not kwargs.has_key('session_id'):
+                self.save()
+
+        @staticmethod
+        def _parse_connection_details(details):
+            # mongodb://[host[:port]]/db
+            match = re.match('mongodb://([\S|\.]+?)?(?::(\d+))?/(\S+)', details)
+            return match.group(1), match.group(2), match.group(3) # host, port, database
+
+        def save(self):
+            """Upsert a document to the tornado_sessions collection.
+            The document's structure is like so:
+            {'session_id': self.session_id,
+             'data': self.serialize(),
+             'expires': int(time.mktime(self.expires.timetuple())),
+             'user_agent': self.user_agent}
+            """
+            # upsert
+            self.db.update(
+                {'session_id': self.session_id}, # equality criteria
+                {'session_id': self.session_id,
+                 'data': self.serialize(),
+                 'expires': int(time.mktime(self.expires.timetuple())),
+                 'user_agent': self.user_agent}, # new document
+                upsert=True)
+            self.db.database.connection.end_request()
+
+        @staticmethod
+        def load(session_id, db):
+            """Load session from the storage."""
+            try:
+                data = db.find_one({'session_id': session_id})
+                if data:
+                    kwargs = MongoDBSession.deserialize(data['data'])
+                    db.database.connection.end_request()
+                    return MongoDBSession(db, **kwargs)
+                db.database.connection.end_request()
+                return None
+            except:
+                db.database.connection.end_request()
+                return None
+
+        def delete(self):
+            """Remove session from the storage."""
+            self.db.remove({'session_id': self.session_id})
+            self.db.database.connection.end_request()
 
 except ImportError:
     pass

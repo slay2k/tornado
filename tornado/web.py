@@ -811,7 +811,9 @@ class RequestHandler(object):
             elif url.startswith('memcached'):
                 raise NotImplemented
             elif url.startswith('mongodb'):
-                raise NotImplemented
+                old_session = session.MongoDBSession.load(session_id, settings['_db'])
+                if old_session is None or old_session._is_expired(): # create new session
+                    new_session = session.MongoDBSession(settings['_db'], **kw)
             elif url.startswith('redis'):
                 old_session = session.RedisSession.load(session_id, settings['_db'])
                 if old_session is None or old_session._is_expired(): # create new session
@@ -964,6 +966,17 @@ class Application(object):
             try:
                 import redis
                 settings['_db'] = redis.Redis()
+            except ImportError:
+                pass
+        elif settings.get('session_storage').startswith('mongodb'):
+            try:
+                import pymongo
+                h, p, d = session.MongoDBSession._parse_connection_details(
+                    settings['session_storage'])
+                conn = pymongo.Connection(host=h, port=p)
+                db = pymongo.database.Database(conn, d)
+                db.tornado_sessions.ensure_index('session_id', unique=True)
+                settings['_db'] = pymongo.collection.Collection(db, 'tornado_sessions')
             except ImportError:
                 pass
         self.handlers = []
