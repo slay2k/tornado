@@ -788,7 +788,7 @@ class RequestHandler(object):
 
     def _create_session(self):
         settings = self.application.settings # just a shortcut
-        url = settings.get('session_storage', 'file://') # default to file storage
+        url = settings.get('session_storage')
         session_id = self.get_secure_cookie(settings.get('session_cookie_name', 'session_id'))
         kw = {'security_model': settings.get('session_security_model', []),
               'duration': settings.get('session_age', 900),
@@ -956,6 +956,7 @@ class Application(object):
         else:
             self.transforms = transforms
         if not settings.get('session_storage'):
+            # fallback to file based session storage
             session_file = tempfile.NamedTemporaryFile(
                 prefix='tornado_sessions_', delete=False)
             settings['session_storage'] = 'file://'+session_file.name
