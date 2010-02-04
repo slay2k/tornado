@@ -19,7 +19,9 @@ Two utility functions, invalidate() and refresh() are available to
 every session object. Read their documentation to learn more.
 
 The application provider is responsible for removing stale, expired
-sessions from the storage.
+sessions from the storage. However, he can use the delete_expired()
+function provided with every storage class except Memcached, which
+knows when a session expired and removes it automatically.
 
 The session module introduces new settings available to the
 application:
@@ -267,6 +269,11 @@ class BaseSession(collections.MutableMapping):
         """Remove all data representing the session from backend storage."""
         pass
 
+    @staticmethod
+    def delete_expired(file_path):
+        """Deletes sessions with timestamps in the past form storage."""
+        pass
+
     def serialize(self):
         dump = {'session_id': self.session_id,
                 'data': self.data,
@@ -372,6 +379,22 @@ class FileSession(BaseSession):
         writer_temp_file.close()
         os.rename(writer_temp, self.file_path) # rename the temporary holder to the session file
 
+    @staticmethod
+    def delete_expired(file_path):
+        reader_file = open(file_path, 'rb')
+        reader = csv.DictReader(reader_file,
+                                fieldnames=['session_id', 'data', 'expires', 'ip_address', 'user-agent'])
+        writer_temp = tempfile.mkstemp()[1]
+        writer_temp_file = open(writer_temp, 'w+b')
+        writer = csv.DictWriter(writer_temp_file,
+                                ['session_id', 'data', 'expires', 'ip_address', 'user-agent'])
+        for line in reader:
+            if int(line['expires']) > int(time.time()):
+                writer.writerow(line)
+
+        reader_file.close()
+        writer_temp_file.close()
+        os.rename(writer_temp, file_path)
 
 class DirSession(BaseSession):
     """A "directory" based session storage. Every session is stored in a
@@ -425,6 +448,20 @@ class DirSession(BaseSession):
         session_file = os.path.join(self.dir_path, self.session_id+'.session')
         if os.path.isfile(session_file):
             os.remove(session_file)
+
+    @staticmethod
+    def delete_expired(dir_path):
+        assert os.path.isdir(dir_path)
+        all_files = os.listdir(dir_path)
+        session_files = filter(lambda x: x.endswith('.session'), all_files)
+        for s in session_files:
+            name = os.path.join(dir_path, s)
+            session_file = open(name, 'rb')
+            reader = csv.reader(session_file)
+            data = reader.next()
+            session_file.close()
+            if int(data[2]) < int(time.time()):
+                os.remove(name)
 
 
 class MySQLSession(BaseSession):
@@ -510,6 +547,11 @@ class MySQLSession(BaseSession):
         self.connection.execute("""
         delete from tornado_sessions where session_id = %s;""", self.session_id)
 
+    @staticmethod
+    def delete_expired(connection):
+        connection.execute("""
+        delete from tornado_sessions where expires < %s;""", int(time.time()))
+
 
 try:
     import redis
@@ -572,6 +614,14 @@ try:
                 self.connection.save(background=True)
             except redis.ResponseError:
                 pass
+
+        @staticmethod
+        def delete_expired(connection):
+            for key in connection.keys('*'):
+                value = connection.get(key)
+                expires = value.split(':', 2)[1]
+                if int(expires) < int(time.time()):
+                    connection.delete(key)
 
 except ImportError:
     pass
@@ -646,6 +696,10 @@ try:
             self.db.remove({'session_id': self.session_id})
             self.db.database.connection.end_request()
 
+        @staticmethod
+        def delete_expired(db):
+            db.remove({'expires': {'$lte': int(time.time())}})
+
 except ImportError:
     pass
 
@@ -716,6 +770,13 @@ try:
         def delete(self):
             """Delete the session from storage."""
             self.connection.delete(self.session_id)
+
+        def delete_expired(connection):
+            """With Memcached as session storage, this function does
+            not make sense as all keys are saved with expiry time
+            exactly the same as the session's. Hence Memcached takse
+            care of cleaning out the garbage."""
+            raise NotImplemented
 
 except ImportError:
     pass
