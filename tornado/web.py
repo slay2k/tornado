@@ -960,6 +960,11 @@ class Application(object):
             session_file = tempfile.NamedTemporaryFile(
                 prefix='tornado_sessions_', delete=False)
             settings['session_storage'] = 'file://'+session_file.name
+        elif settings.get('session_storage').startswith('dir'):
+            dir_path = settings['session_storage']
+            if not os.path.isdir(dir_path[6:]):
+                settings['session_storage'] = 'dir://'+tempfile.mkdtemp(
+                    prefix='tornado_sessions')
         elif settings.get('session_storage').startswith('mysql'):
             # create a connection to MySQL 
             u, p, h, d = session.MySQLSession._parse_connection_details(

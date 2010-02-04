@@ -68,7 +68,9 @@ session_storage: a string specifying the session storage;
                  another choice is to store session in a directory, where
                  each session is stored in a separate, single file; to
                  enable this behaviour, set this setting to:
-                 dir:///path/to/session/storage/directory
+                 dir://[/path/to/session/storage/directory]
+                 if you omit the directory path, Tornado will create
+                 a temporary directory for you
                  each session will be mapped to a file following the
                  <session_id>.session format, saved in this directory
 
