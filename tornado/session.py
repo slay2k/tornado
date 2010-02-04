@@ -367,7 +367,7 @@ class FileSession(BaseSession):
         reader_file = open(self.file_path, 'rb')
         reader = csv.DictReader(reader_file,
                                 fieldnames=['session_id', 'data', 'expires', 'ip_address', 'user-agent'])
-        writer_temp = tempfile.mkstemp()[1] 
+        writer_temp = tempfile.mkstemp()[1]
         writer_temp_file = open(writer_temp, 'w+b')
         writer = csv.DictWriter(writer_temp_file,
                                 ['session_id', 'data', 'expires', 'ip_address', 'user-agent'])
