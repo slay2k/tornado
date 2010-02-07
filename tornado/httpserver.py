@@ -186,6 +186,10 @@ class HTTPServer(object):
             io_loop.add_handler(self._socket.fileno(), self._handle_events,
                                 ioloop.IOLoop.READ)
 
+    def stop(self):
+      self.io_loop.remove_handler(self._socket.fileno())
+      self._socket.close()
+
     def _handle_events(self, fd, events):
         while True:
             try:
@@ -360,13 +364,13 @@ class HTTPRequest(object):
         self.body = body or ""
         if connection and connection.xheaders:
             # Squid uses X-Forwarded-For, others use X-Real-Ip
-            self.remote_ip = headers.get(
-                "X-Real-Ip", headers.get("X-Forwarded-For", remote_ip))
-            self.protocol = headers.get("X-Scheme", protocol) or "http"
+            self.remote_ip = self.headers.get(
+                "X-Real-Ip", self.headers.get("X-Forwarded-For", remote_ip))
+            self.protocol = self.headers.get("X-Scheme", protocol) or "http"
         else:
             self.remote_ip = remote_ip
             self.protocol = protocol or "http"
-        self.host = host or headers.get("Host") or "127.0.0.1"
+        self.host = host or self.headers.get("Host") or "127.0.0.1"
         self.files = files or {}
         self.connection = connection
         self._start_time = time.time()
