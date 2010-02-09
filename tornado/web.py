@@ -989,7 +989,11 @@ class Application(object):
         elif settings.get('session_storage').startswith('redis'):
             try:
                 import redis
-                settings['_db'] = redis.Redis()
+                pswd, h, p, db = session.RedisSession._parse_connection_details(
+                    settings['session_storage'])
+                settings['_db'] = redis.Redis(host=h, port=p, db=db)
+                if pswd:
+                    settings['_db'].auth(pswd)
             except ImportError:
                 pass
         elif settings.get('session_storage').startswith('mongodb'):

@@ -81,7 +81,11 @@ session_storage: a string specifying the session storage;
                  'mysql://username:password[@hostname[:port]]/database'
 
                  to enable Redis as a storage engine, set this setting
-                 to 'redis://'
+                 to 'redis://' with optional password, host, port and database
+                 elements (e.g. 'redis://secret@127.0.0.1:8888/1'; if using
+                 password with default host, you have to append an @-sign:
+                 'redis://secret@/2'); if not complete, defaults are used (
+                 localhost:6379, no auth, db 1)
                  remember that you have to have the redis python library
                  available on your system to enable Redis-based sessions
 
@@ -576,6 +580,12 @@ try:
             self.connection = connection
             if not kwargs.has_key('session_id'):
                 self.save()
+
+        def _parse_connection_details(details):
+            # redis://[auth@][host[:port]][/db]
+            match = re.match('redis://(?:(\S+)@)?([^\s:/]+)?(?::(\d+))?(?:/(\d+))?$', details)
+            password, host, port, db = match.groups()
+            return password, host, port, db
 
         def save(self):
             """Save the current sesssion to Redis. The session_id
