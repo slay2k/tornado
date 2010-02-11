@@ -88,8 +88,11 @@ class RequestHandler(object):
         self.request = request
         if isinstance(self, StaticFileHandler):
             self.session = None
-        else:
+        elif self.application.settings.get("session_storage"):
+            print self.application.settings.get("session_storage")
             self.session = self._create_session()
+        else:
+            self.session = None
         self._headers_written = False
         self._finished = False
         self._auto_finish = True
@@ -814,7 +817,7 @@ class RequestHandler(object):
         new_session = None
         old_session = None
 
-        if url and not url.startswith('file'):
+        if url:
             if url.startswith('mysql'):
                 old_session = session.MySQLSession.load(session_id, settings['_db'])
                 if old_session is None or old_session._is_expired(): # create a new session
@@ -840,11 +843,11 @@ class RequestHandler(object):
                 old_session = session.DirSession.load(session_id, dir_path)
                 if old_session is None or old_session._is_expired(): # create new session
                     new_session = session.DirSession(dir_path, **kw)
-        else:
-            file_path = url[7:]
-            old_session = session.FileSession.load(session_id, file_path)
-            if old_session is None or old_session._is_expired(): # create new session
-                new_session = session.FileSession(file_path, **kw)
+            elif url.startswith('file'):
+                file_path = url[7:]
+                old_session = session.FileSession.load(session_id, file_path)
+                if old_session is None or old_session._is_expired(): # create new session
+                    new_session = session.FileSession(file_path, **kw)
 
         if old_session is not None:
             if old_session._should_regenerate():
@@ -972,7 +975,8 @@ class Application(object):
         else:
             self.transforms = transforms
         if not settings.get('session_storage'):
-            # fallback to file based session storage
+            logging.info("Sessions are globally deactivated because session_storage has not been configured")
+        elif settings.get('session_storage').startswith('file'):
             session_file = tempfile.NamedTemporaryFile(
                 prefix='tornado_sessions_', delete=False)
             settings['session_storage'] = 'file://'+session_file.name
