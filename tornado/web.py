@@ -86,13 +86,10 @@ class RequestHandler(object):
     def __init__(self, application, request, transforms=None):
         self.application = application
         self.request = request
-        if isinstance(self, StaticFileHandler):
+        if isinstance(self, StaticFileHandler) or not self.settings.get('session_storage'):
             self.session = None
-        elif self.application.settings.get("session_storage"):
-            print self.application.settings.get("session_storage")
-            self.session = self._create_session()
         else:
-            self.session = None
+            self.session = self._create_session()
         self._headers_written = False
         self._finished = False
         self._auto_finish = True
@@ -817,37 +814,38 @@ class RequestHandler(object):
         new_session = None
         old_session = None
 
-        if url:
-            if url.startswith('mysql'):
-                old_session = session.MySQLSession.load(session_id, settings['_db'])
-                if old_session is None or old_session._is_expired(): # create a new session
-                    new_session = session.MySQLSession(settings['_db'], **kw)
-            elif url.startswith('postgresql'):
-                raise NotImplemented
-            elif url.startswith('sqlite'):
-                raise NotImplemented
-            elif url.startswith('memcached'):
-                old_session = session.MemcachedSession.load(session_id, settings['_db'])
-                if old_session is None or old_session._is_expired(): # create new session
-                    new_session = session.MemcachedSession(settings['_db'], **kw)
-            elif url.startswith('mongodb'):
-                old_session = session.MongoDBSession.load(session_id, settings['_db'])
-                if old_session is None or old_session._is_expired(): # create new session
-                    new_session = session.MongoDBSession(settings['_db'], **kw)
-            elif url.startswith('redis'):
-                old_session = session.RedisSession.load(session_id, settings['_db'])
-                if old_session is None or old_session._is_expired(): # create new session
-                    new_session = session.RedisSession(settings['_db'], **kw)
-            elif url.startswith('dir'):
-                dir_path = url[6:]
-                old_session = session.DirSession.load(session_id, dir_path)
-                if old_session is None or old_session._is_expired(): # create new session
-                    new_session = session.DirSession(dir_path, **kw)
-            elif url.startswith('file'):
-                file_path = url[7:]
-                old_session = session.FileSession.load(session_id, file_path)
-                if old_session is None or old_session._is_expired(): # create new session
-                    new_session = session.FileSession(file_path, **kw)
+        if url.startswith('mysql'):
+            old_session = session.MySQLSession.load(session_id, settings['_db'])
+            if old_session is None or old_session._is_expired(): # create a new session
+                new_session = session.MySQLSession(settings['_db'], **kw)
+        elif url.startswith('postgresql'):
+            raise NotImplemented
+        elif url.startswith('sqlite'):
+            raise NotImplemented
+        elif url.startswith('memcached'):
+            old_session = session.MemcachedSession.load(session_id, settings['_db'])
+            if old_session is None or old_session._is_expired(): # create new session
+                new_session = session.MemcachedSession(settings['_db'], **kw)
+        elif url.startswith('mongodb'):
+            old_session = session.MongoDBSession.load(session_id, settings['_db'])
+            if old_session is None or old_session._is_expired(): # create new session
+                new_session = session.MongoDBSession(settings['_db'], **kw)
+        elif url.startswith('redis'):
+            old_session = session.RedisSession.load(session_id, settings['_db'])
+            if old_session is None or old_session._is_expired(): # create new session
+                new_session = session.RedisSession(settings['_db'], **kw)
+        elif url.startswith('dir'):
+            dir_path = url[6:]
+            old_session = session.DirSession.load(session_id, dir_path)
+            if old_session is None or old_session._is_expired(): # create new session
+                new_session = session.DirSession(dir_path, **kw)
+        elif url.startswith('file'):
+            file_path = url[7:]
+            old_session = session.FileSession.load(session_id, file_path)
+            if old_session is None or old_session._is_expired(): # create new session
+                new_session = session.FileSession(file_path, **kw)
+        else:
+            return None
 
         if old_session is not None:
             if old_session._should_regenerate():
