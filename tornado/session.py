@@ -788,7 +788,7 @@ try:
             not make sense as all keys are saved with expiry time
             exactly the same as the session's. Hence Memcached takse
             care of cleaning out the garbage."""
-            raise NotImplemented
+            raise NotImplementedError
 
 except ImportError:
     pass

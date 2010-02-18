@@ -819,9 +819,9 @@ class RequestHandler(object):
             if old_session is None or old_session._is_expired(): # create a new session
                 new_session = session.MySQLSession(settings['_db'], **kw)
         elif url.startswith('postgresql'):
-            raise NotImplemented
+            raise NotImplementedError
         elif url.startswith('sqlite'):
-            raise NotImplemented
+            raise NotImplementedError
         elif url.startswith('memcached'):
             old_session = session.MemcachedSession.load(session_id, settings['_db'])
             if old_session is None or old_session._is_expired(): # create new session
