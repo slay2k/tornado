@@ -1,4 +1,16 @@
 # -*- coding: utf-8 -*-
+# TODO: limit session size
+##       ip_address column must store also IPv6 addresses - http://www.faqs.org/rfcs/rfc1924.html 39 numbers; this together with security_model should also provide abilities to convert between ipv4 and ipv6 or 46, from INET6_ADDRSTRLEN
+
+#       check out Beaker
+#        look, if lazy session loading can be done the way Beaker does it (a last_accessed attribute has to be available all the time, to check, if the session has not expired)
+#        check if memcache module has the same enough API as pylibmc so we can fallback if ImportError
+#        add errors if someone is trying to use a backend when he has not installed the modules
+#       benchmark
+#       is session regeneration is None, honor it, don't do it
+#        the same goes for session_age
+
+
 
 """
 Sessions module for the Tornado framework.
@@ -581,6 +593,7 @@ try:
             if not kwargs.has_key('session_id'):
                 self.save()
 
+        @staticmethod
         def _parse_connection_details(details):
             # redis://[auth@][host[:port]][/db]
             match = re.match('redis://(?:(\S+)@)?([^\s:/]+)?(?::(\d+))?(?:/(\d+))?$', details)
