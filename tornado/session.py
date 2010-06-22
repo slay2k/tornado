@@ -1,24 +1,15 @@
 # -*- coding: utf-8 -*-
-# TODO: limit session size
-##       ip_address column must store also IPv6 addresses - http://www.faqs.org/rfcs/rfc1924.html 39 numbers; this together with security_model should also provide abilities to convert between ipv4 and ipv6 or 46, from INET6_ADDRSTRLEN
-
-#       check out Beaker
-#        look, if lazy session loading can be done the way Beaker does it (a last_accessed attribute has to be available all the time, to check, if the session has not expired)
-#        check if memcache module has the same enough API as pylibmc so we can fallback if ImportError
-#        add errors if someone is trying to use a backend when he has not installed the modules
-#       benchmark
-#       is session regeneration is None, honor it, don't do it
-#        the same goes for session_age
-
-
 
 """
 Sessions module for the Tornado framework.
 Milan Cermak <milan.cermak@gmail.com> 
 
-This module implements sessions for Tornado. So far, it can store
-session data only in files or MySQL databse (Memcached and MongoDB
-based are planned for future versions).
+This module implements sessions for Tornado. It can store
+session data in files or MySQL databse, Memcached, Redis
+and MongoDB.
+
+USAGE:
+======
 
 Every session object can be handled as a dictionary:
     self.session[key] = value
@@ -34,6 +25,10 @@ The application provider is responsible for removing stale, expired
 sessions from the storage. However, he can use the delete_expired()
 function provided with every storage class except Memcached, which
 knows when a session expired and removes it automatically.
+
+
+SETTINGS:
+=========
 
 The session module introduces new settings available to the
 application:
