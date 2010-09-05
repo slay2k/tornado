@@ -34,14 +34,15 @@ The session module introduces new settings available to the
 application:
 
 session_age: how long should the session be valid (applies also to cookies);
-             the value can be anything an integer, string or datetime.timedelta;
-             default is 15 mins
+             the value can be anything an integer, long, string or datetime.timedelta;
+             integer, long and string are meant to represent seconds,
+             default is 900 seconds (15 mins);
              check out _expires_at for additional info
 
-session_regeneration_interval: period, after which the session_id should be
+session_regeneration_interval: period in seconds, after which the session_id should be
                                regenerated; when the session creation time + period
                                exceed current time, a new session is stored
-                               server-side (the sesion data remain unchanged) and
+                               server-side (the sesion data remains unchanged) and
                                the client cookie is refreshed; the old session
                                is no longer valid
                                session regeneration is used to strenghten security
