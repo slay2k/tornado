@@ -632,7 +632,7 @@ try:
                              self.user_agent))
             self.connection.set(self.session_id, value)
             try:
-                self.connection.save(background=True)
+                self.connection.bgsave()
             except redis.ResponseError:
                 pass
             self.dirty = False
@@ -654,7 +654,7 @@ try:
             delete() too calls BGSAVE."""
             self.connection.delete(self.session_id)
             try:
-                self.connection.save(background=True)
+                self.connection.bgsave()
             except redis.ResponseError:
                 pass
 
