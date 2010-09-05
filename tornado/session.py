@@ -201,12 +201,16 @@ class BaseSession(collections.MutableMapping):
 
     def _is_expired(self):
         """Check if the session has expired."""
+        if self.expires is None: # never expire
+            return False 
         return datetime.datetime.now() > self.expires
 
     def _expires_at(self):
         """Find out the expiration time. Returns datetime.datetime."""
         v = self.duration
-        if isinstance(v, datetime.timedelta):
+        if v is None: # never expire
+            return None
+        elif isinstance(v, datetime.timedelta):
             pass
         elif isinstance(v, (int, long)):
             self.duration =  datetime.timedelta(seconds=v)
@@ -219,6 +223,8 @@ class BaseSession(collections.MutableMapping):
 
     def _should_regenerate(self):
         """Determine if the session_id should be regenerated."""
+        if self.regeneration_interval is None: # never regenerate
+            return False
         return datetime.datetime.now() > self.next_regeneration
 
     def _next_regeneration_at(self):
@@ -229,7 +235,9 @@ class BaseSession(collections.MutableMapping):
         # converting in later calls and return the datetime
         # of next planned regeneration
         v = self.regeneration_interval
-        if isinstance(v, datetime.timedelta):
+        if v is None: # never regenerate
+            return None
+        elif isinstance(v, datetime.timedelta):
             pass
         elif isinstance(v, (int, long)):
             self.regeneration_interval = datetime.timedelta(seconds=v)
