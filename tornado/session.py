@@ -602,7 +602,7 @@ try:
             # redis://[auth@][host[:port]][/db]
             match = re.match('redis://(?:(\S+)@)?([^\s:/]+)?(?::(\d+))?(?:/(\d+))?$', details)
             password, host, port, db = match.groups()
-            return password, host, port, db
+            return password, host, int(port), db
 
         def save(self):
             """Save the current sesssion to Redis. The session_id
