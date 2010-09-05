@@ -221,6 +221,13 @@ class BaseSession(collections.MutableMapping):
 
         return datetime.datetime.now() + self.duration
 
+    def _serialize_expires(self):
+        """ Determines what value of expires is stored to DB during save()."""
+        if self.expires is None:
+            return None
+        else:
+            return int(time.mktime(self.expires.timetuple())),
+
     def _should_regenerate(self):
         """Determine if the session_id should be regenerated."""
         if self.regeneration_interval is None: # never regenerate
@@ -346,7 +353,7 @@ class FileSession(BaseSession):
             if line['session_id'] == self.session_id:
                 writer.writerow({'session_id': self.session_id,
                                  'data': self.serialize(),
-                                 'expires': int(time.mktime(self.expires.timetuple())),
+                                 'expires': self._serialize_expires(),
                                  'ip_address': self.ip_address,
                                  'user-agent': self.user_agent})
                 found = True
@@ -358,7 +365,7 @@ class FileSession(BaseSession):
             # data attribute
             writer.writerow({'session_id': self.session_id,
                              'data': self.serialize(),
-                             'expires': int(time.mktime(self.expires.timetuple())),
+                             'expires': self._serialize_expires(),
                              'ip_address': self.ip_address,
                              'user-agent': self.user_agent})
         reader_file.close()
@@ -443,7 +450,7 @@ class DirSession(BaseSession):
         writer = csv.writer(temp_file)
         writer.writerow([self.session_id,
                          self.serialize(),
-                         int(time.mktime(self.expires.timetuple())),
+                         self._serialize_expires(),
                          self.ip_address,
                          self.user_agent])
         temp_file.close()
@@ -546,7 +553,7 @@ class MySQLSession(BaseSession):
             on duplicate key update
             session_id=values(session_id), data=values(data), expires=values(expires),
             ip_address=values(ip_address), user_agent=values(user_agent);""",
-            self.session_id, self.serialize(), int(time.mktime(self.expires.timetuple())),
+            self.session_id, self.serialize(), self._serialize_expires(),
             self.ip_address, self.user_agent)
         self.dirty = False
 
@@ -604,6 +611,13 @@ try:
             password, host, port, db = match.groups()
             return password, host, int(port), db
 
+        def _serialize_expires(self):
+            """ Determines what value of expires is stored to DB during save()."""
+            if self.expires is None:
+                return '-1'
+            else:
+                return str(int(time.mktime(self.expires.timetuple())))
+
         def save(self):
             """Save the current sesssion to Redis. The session_id
             acts as a key. The value is constructed of colon separated values
@@ -613,7 +627,7 @@ try:
             if not self.dirty:
                 return
             value = ':'.join((self.serialize(),
-                             str(int(time.mktime(self.expires.timetuple()))),
+                             self._serialize_expires(),
                              self.ip_address,
                              self.user_agent))
             self.connection.set(self.session_id, value)
@@ -646,10 +660,11 @@ try:
 
         @staticmethod
         def delete_expired(connection):
+            t = int(time.time())
             for key in connection.keys('*'):
                 value = connection.get(key)
                 expires = value.split(':', 2)[1]
-                if int(expires) < int(time.time()):
+                if int(expires) < t:
                     connection.delete(key)
 
 except ImportError:
@@ -692,7 +707,7 @@ try:
             The document's structure is like so:
             {'session_id': self.session_id,
              'data': self.serialize(),
-             'expires': int(time.mktime(self.expires.timetuple())),
+             'expires': self._serialize_expires(),
              'user_agent': self.user_agent}
             """
             # upsert
@@ -700,7 +715,7 @@ try:
                 {'session_id': self.session_id}, # equality criteria
                 {'session_id': self.session_id,
                  'data': self.serialize(),
-                 'expires': int(time.mktime(self.expires.timetuple())),
+                 'expires': self._serialize_expires(),
                  'user_agent': self.user_agent}, # new document
                 upsert=True)
             self.db.database.connection.end_request()
@@ -764,6 +779,13 @@ try:
             else:
                 return ['127.0.0.1']
 
+        def _serialize_expires(self):
+            """ Determines what value of expires is stored to DB during save()."""
+            if self.expires is None:
+                return '-1'
+            else:
+                return str(int(time.mktime(self.expires.timetuple())))
+
         def save(self):
             """Write the session to Memcached. Session ID is used as
             key, value is constructed as colon separated values of
@@ -775,12 +797,18 @@ try:
             if not self.dirty:
                 return
             value = ':'.join((self.serialize(),
-                              str(int(time.mktime(self.expires.timetuple()))),
+                              self._serialize_expires(),
                               self.ip_address,
                               self.user_agent))
             # count how long should it last and then add or rewrite
-            live_sec = self.expires - datetime.datetime.now()
-            self.connection.set(self.session_id, value, time=live_sec.seconds) 
+            if self.expires is None:
+                # set expiry 30 days, max for memcache
+                # http://code.google.com/p/memcached/wiki/FAQ#What_are_the_limits_on_setting_expire_time?_%28why_is_there_a_30_d
+                self.connection.set(self.session_id, value, time=timedelta.max.seconds * 30) 
+            else:
+                live_sec = self.expires - datetime.datetime.now()
+                self.connection.set(self.session_id, value, time=live_sec.seconds)
+
             self.dirty = False
 
         @staticmethod
