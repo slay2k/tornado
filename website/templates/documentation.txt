@@ -52,12 +52,12 @@ Download
 --------
 Download the most recent version of Tornado from GitHub:
 
-> [tornado-0.2.tar.gz](/static/tornado-0.2.tar.gz)
+> [tornado-1.0.1.tar.gz](http://github.com/downloads/facebook/tornado/tornado-1.0.1.tar.gz)
 
 You can also [browse the source](http://github.com/facebook/tornado) on GitHub. To install Tornado:
 
-    tar xvzf tornado-0.2.tar.gz
-    cd tornado-0.2
+    tar xvzf tornado-1.0.1.tar.gz
+    cd tornado-1.0.1
     python setup.py build
     sudo python setup.py install
 
@@ -70,11 +70,19 @@ directory included with the Tornado package.
 
 Tornado has been tested on Python 2.5 and 2.6. To use all of the features of Tornado, you need to have [PycURL](http://pycurl.sourceforge.net/) and a JSON library like [simplejson](http://pypi.python.org/pypi/simplejson/) installed. Complete installation instructions for Mac OS X and Ubuntu are included below for convenience.
 
-**Mac OS X 10.5/10.6**
+**Mac OS X 10.6 (Python 2.6)**
+
+    sudo easy_install pycurl
+
+**Mac OS X 10.5 (Python 2.5)**
 
     sudo easy_install setuptools pycurl==7.16.2.1 simplejson
 
-**Ubuntu Linux**
+**Ubuntu Linux (Python 2.6)**
+
+    sudo apt-get install python-pycurl
+
+**Ubuntu Linux (Python 2.5)**
 
     sudo apt-get install python-dev python-pycurl python-simplejson
 
@@ -146,6 +154,11 @@ You can get query string arguments and parse `POST` bodies with the
             self.set_header("Content-Type", "text/plain")
             self.write("You wrote " + self.get_argument("message"))
 
+Uploaded files are available in `self.request.files`, which maps names
+(the name of the HTML `<input type="file">` element) to a list of
+files. Each file is a dictionary of the form `{"filename":...,
+"content_type":..., "body":...}`.
+
 If you want to send an error response to the client, e.g., 403 Unauthorized,
 you can just raise a `tornado.web.HTTPError` exception:
 
@@ -154,7 +167,7 @@ you can just raise a `tornado.web.HTTPError` exception:
 
 The request handler can access the object representing the current request
 with `self.request`. The `HTTPRequest` object includes a number of useful
-attribute, including:
+attributes, including:
 
  * `arguments` - all of the `GET` and `POST` arguments
  * `files` - all of the uploaded files (via `multipart/form-data` POST requests)
@@ -164,6 +177,51 @@ attribute, including:
 See the class definition for `HTTPRequest` in `httpserver` for a complete list
 of attributes.
 
+### Overriding RequestHandler methods
+
+In addition to `get()`/`post()`/etc, certain other methods in `RequestHandler`
+are designed to be overridden by subclasses when necessary.  On every request,
+the following sequence of calls takes place:
+
+ 1. A new RequestHandler object is created on each request
+ 2. `initialize()` is called with keyword arguments from the `Application`
+    configuration. (the `initialize` method is new in Tornado 1.1; in older
+    versions subclasses would override `__init__` instead).  `initialize`
+    should typically just save the arguments passed into member variables;
+    it may not produce any output or call methods like `send_error`.
+ 3. `prepare()` is called.  This is most useful in a base class shared
+    by all of your handler subclasses, as `prepare` is called no matter
+    which HTTP method is used.  `prepare` may produce output; if it calls
+    `finish` (or `send_error`, etc), processing stops here.
+ 4. One of the HTTP methods is called: `get()`, `post()`, `put()`, etc.
+    If the URL regular expression contains capturing groups, they are
+    passed as arguments to this method.
+
+Here is an example demonstrating the `initialize()` method:
+
+    class ProfileHandler(RequestHandler):
+        def initialize(self, database):
+            self.database = database
+
+        def get(self, username):
+            ...
+
+    app = Application([
+        (r'/user/(.*)', ProfileHandler, dict(database=database)),
+        ])
+
+Other methods designed for overriding include:
+
+ * `get_error_html(self, status_code, exception=None, **kwargs)` - returns
+   HTML (as a string) for use on error pages.
+ * `get_current_user(self)` - see
+   [User Authentication](#user-authentication) below
+ * `get_user_locale(self)` - returns `locale` object to use for the current
+   user
+ * `get_login_url(self)` - returns login url to be used by the
+   `@authenticated` decorator (default is in `Application` settings)
+ * `get_template_path(self)` - returns location of template files (default is
+   in `Application` settings)
 
 ### Templates
 
@@ -667,6 +725,9 @@ will be properly closed.
 For a more advanced asynchronous example, take a look at the `chat` example
 application, which implements an AJAX chat room using
 [long polling](http://en.wikipedia.org/wiki/Push_technology#Long_polling).
+Users of long polling may want to override `on_connection_close()` to clean
+up after the client closes the connection (but see that method's docstring
+for caveats).
 
 
 ### Third party authentication
@@ -688,7 +749,7 @@ the Google credentials in a cookie for later access:
                 self.get_authenticated_user(self.async_callback(self._on_auth))
                 return
             self.authenticate_redirect()
-    
+
         def _on_auth(self, user):
             if not user:
                 self.authenticate_redirect()
@@ -704,7 +765,7 @@ Web application performance is generally bound by architecture, not frontend
 performance. That said, Tornado is pretty fast relative to most popular
 Python web frameworks.
 
-We ran a few remedial load tests on a simple "Hello, world" application 
+We ran a few remedial load tests on a simple "Hello, world" application
 in each of the most popular Python web frameworks
 ([Django](http://www.djangoproject.com/), [web.py](http://webpy.org/), and
 [CherryPy](http://www.cherrypy.org/)) to get the baseline performance of
@@ -741,6 +802,11 @@ At FriendFeed, we use [nginx](http://nginx.net/) as a load balancer
 and static file server. We run multiple instances of the Tornado web
 server on multiple frontend machines. We typically run one Tornado frontend
 per core on the machine (sometimes more depending on utilization).
+
+When running behind a load balancer like nginx, it is recommended to pass
+`xheaders=True` to the `HTTPServer` constructor.  This will tell Tornado
+to use headers like `X-Real-IP` to get the user's IP address instead of
+attributing all traffic to the balancer's IP address.
 
 This is a barebones nginx config file that is structurally similar to the
 one we use at FriendFeed. It assumes nginx and the Tornado servers
@@ -779,7 +845,7 @@ are running on ports 8000 - 8003:
         tcp_nodelay on;
         gzip on;
         gzip_min_length 1000;
-        gzip_proxied any;              
+        gzip_proxied any;
         gzip_types text/plain text/html text/css text/xml
                    application/x-javascript application/xml
                    application/atom+xml text/javascript;
@@ -855,12 +921,9 @@ app built on Tornado.
 
 Caveats and support
 -------------------
-Tornado was refactored from the [FriendFeed](http://friendfeed.com/)
-code base to reduce dependencies. This refactoring may have introduced
-bugs.  Likewise, because the FriendFeed servers have always run
-[behind nginx](#running-tornado-in-production), Tornado has not been
-extensively tested with HTTP/1.1 clients beyond Firefox. Tornado
-currently does not attempt to handle multi-line headers and some types
-of malformed input.
+Because FriendFeed and other large users of Tornado run [behind
+nginx](#running-tornado-in-production) or Apache proxies, Tornado's HTTP
+server currently does not attempt to handle multi-line headers and some
+types of malformed input.
 
 You can discuss Tornado and report bugs on [the Tornado developer mailing list](http://groups.google.com/group/python-tornado).
