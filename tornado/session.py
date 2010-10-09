@@ -200,7 +200,7 @@ class BaseSession(collections.MutableMapping):
 
     def _is_expired(self):
         """Check if the session has expired."""
-        return datetime.datetime.now() > self.expires
+        return datetime.datetime.utcnow() > self.expires
 
     def _expires_at(self):
         """Find out the expiration time. Returns datetime.datetime."""
@@ -214,11 +214,11 @@ class BaseSession(collections.MutableMapping):
         else:
             self.duration = datetime.timedelta(seconds=900) # 15 mins
 
-        return datetime.datetime.now() + self.duration
+        return datetime.datetime.utcnow() + self.duration
 
     def _should_regenerate(self):
         """Determine if the session_id should be regenerated."""
-        return datetime.datetime.now() > self.next_regeneration
+        return datetime.datetime.utcnow() > self.next_regeneration
 
     def _next_regeneration_at(self):
         """Return a datetime object when the next session id regeneration
@@ -237,7 +237,7 @@ class BaseSession(collections.MutableMapping):
         else:
             self.regeneration_interval = datetime.timedelta(seconds=240) # 4 mins
 
-        return datetime.datetime.now() + self.regeneration_interval
+        return datetime.datetime.utcnow() + self.regeneration_interval
 
     def invalidate(self): 
         """Destorys the session, both server-side and client-side.
@@ -770,7 +770,7 @@ try:
                               self.ip_address,
                               self.user_agent))
             # count how long should it last and then add or rewrite
-            live_sec = self.expires - datetime.datetime.now()
+            live_sec = self.expires - datetime.datetime.utcnow()
             self.connection.set(self.session_id, value, time=live_sec.seconds) 
             self.dirty = False
 
