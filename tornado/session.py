@@ -203,7 +203,7 @@ class BaseSession(collections.MutableMapping):
         """Check if the session has expired."""
         if self.expires is None: # never expire
             return False 
-        return datetime.datetime.now() > self.expires
+        return datetime.datetime.utcnow() > self.expires
 
     def _expires_at(self):
         """Find out the expiration time. Returns datetime.datetime."""
@@ -219,7 +219,7 @@ class BaseSession(collections.MutableMapping):
         else:
             self.duration = datetime.timedelta(seconds=900) # 15 mins
 
-        return datetime.datetime.now() + self.duration
+        return datetime.datetime.utcnow() + self.duration
 
     def _serialize_expires(self):
         """ Determines what value of expires is stored to DB during save()."""
@@ -232,7 +232,7 @@ class BaseSession(collections.MutableMapping):
         """Determine if the session_id should be regenerated."""
         if self.regeneration_interval is None: # never regenerate
             return False
-        return datetime.datetime.now() > self.next_regeneration
+        return datetime.datetime.utcnow() > self.next_regeneration
 
     def _next_regeneration_at(self):
         """Return a datetime object when the next session id regeneration
@@ -253,7 +253,7 @@ class BaseSession(collections.MutableMapping):
         else:
             self.regeneration_interval = datetime.timedelta(seconds=240) # 4 mins
 
-        return datetime.datetime.now() + self.regeneration_interval
+        return datetime.datetime.utcnow() + self.regeneration_interval
 
     def invalidate(self): 
         """Destorys the session, both server-side and client-side.
@@ -806,9 +806,8 @@ try:
                 # http://code.google.com/p/memcached/wiki/FAQ#What_are_the_limits_on_setting_expire_time?_%28why_is_there_a_30_d
                 self.connection.set(self.session_id, value, time=timedelta.max.seconds * 30) 
             else:
-                live_sec = self.expires - datetime.datetime.now()
+                live_sec = self.expires - datetime.datetime.utcnow()
                 self.connection.set(self.session_id, value, time=live_sec.seconds)
-
             self.dirty = False
 
         @staticmethod
