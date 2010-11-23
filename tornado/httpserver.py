@@ -27,12 +27,13 @@ import urlparse
 from tornado import httputil
 from tornado import ioloop
 from tornado import iostream
+from tornado import stack_context
 
 try:
     import fcntl
 except ImportError:
     if os.name == 'nt':
-        import win32_support as fcntl
+        from tornado import win32_support as fcntl
     else:
         raise
 
@@ -203,6 +204,17 @@ class HTTPServer(object):
             logging.info("Pre-forking %d server processes", num_processes)
             for i in range(num_processes):
                 if os.fork() == 0:
+                    import random
+                    from binascii import hexlify
+                    try:
+                        # If available, use the same method as
+                        # random.py
+                        seed = long(hexlify(os.urandom(16)), 16)
+                    except NotImplementedError:
+                        # Include the pid to avoid initializing two
+                        # processes to the same value
+                        seed(int(time.time() * 1000) ^ os.getpid())
+                    random.seed(seed)
                     self.io_loop = ioloop.IOLoop.instance()
                     self.io_loop.add_handler(
                         self._socket.fileno(), self._handle_events,
@@ -225,7 +237,7 @@ class HTTPServer(object):
             try:
                 connection, address = self._socket.accept()
             except socket.error, e:
-                if e[0] in (errno.EWOULDBLOCK, errno.EAGAIN):
+                if e.args[0] in (errno.EWOULDBLOCK, errno.EAGAIN):
                     return
                 raise
             if self.ssl_options is not None:
@@ -271,7 +283,10 @@ class HTTPConnection(object):
         self.xheaders = xheaders
         self._request = None
         self._request_finished = False
-        self.stream.read_until("\r\n\r\n", self._on_headers)
+        # Save stack context here, outside of any request.  This keeps
+        # contexts from one request from leaking into the next.
+        self._header_callback = stack_context.wrap(self._on_headers)
+        self.stream.read_until("\r\n\r\n", self._header_callback)
 
     def write(self, chunk):
         assert self._request, "Request closed"
@@ -305,7 +320,7 @@ class HTTPConnection(object):
         if disconnect:
             self.stream.close()
             return
-        self.stream.read_until("\r\n\r\n", self._on_headers)
+        self.stream.read_until("\r\n\r\n", self._header_callback)
 
     def _on_headers(self, data):
         eol = data.find("\r\n")
@@ -342,9 +357,12 @@ class HTTPConnection(object):
                         self._request.arguments.setdefault(name, []).extend(
                             values)
             elif content_type.startswith("multipart/form-data"):
-                if 'boundary=' in content_type:
-                    boundary = content_type.split('boundary=',1)[1]
-                    if boundary: self._parse_mime_body(boundary, data)
+                fields = content_type.split(";")
+                for field in fields:
+                    k, sep, v = field.strip().partition("=")
+                    if k == "boundary" and v:
+                        self._parse_mime_body(v, data)
+                        break
                 else:
                     logging.warning("Invalid multipart/form-data")
         self.request_callback(self._request)
@@ -422,7 +440,11 @@ class HTTPRequest(object):
             # Squid uses X-Forwarded-For, others use X-Real-Ip
             self.remote_ip = self.headers.get(
                 "X-Real-Ip", self.headers.get("X-Forwarded-For", remote_ip))
-            self.protocol = self.headers.get("X-Scheme", protocol) or "http"
+            # AWS uses X-Forwarded-Proto
+            self.protocol = self.headers.get(
+                "X-Scheme", self.headers.get("X-Forwarded-Proto", protocol))
+            if self.protocol not in ("http", "https"):
+                self.protocol = "http"
         else:
             self.remote_ip = remote_ip
             self.protocol = protocol or "http"

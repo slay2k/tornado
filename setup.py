@@ -31,14 +31,20 @@ if "linux" in sys.platform.lower() and not python_26:
     extensions.append(distutils.core.Extension(
         "tornado.epoll", ["tornado/epoll.c"]))
 
+version = "1.1"
+
 distutils.core.setup(
     name="tornado",
-    version="1.0",
-    packages = ["tornado"],
+    version=version,
+    packages = ["tornado", "tornado.test"],
+    package_data = {
+        "tornado.test": ["README", "test.crt", "test.key"],
+        },
     ext_modules = extensions,
     author="Facebook",
     author_email="python-tornado@googlegroups.com",
     url="http://www.tornadoweb.org/",
+    download_url="http://github.com/downloads/facebook/tornado/tornado-%s.tar.gz" % version,
     license="http://www.apache.org/licenses/LICENSE-2.0",
     description="Tornado is an open source version of the scalable, non-blocking web server and and tools that power FriendFeed",
 )

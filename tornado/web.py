@@ -23,7 +23,6 @@ Tornado non-blocking web server and tools.
 
 Here is the canonical "Hello, world" example app:
 
-    import tornado.httpserver
     import tornado.ioloop
     import tornado.web
 
@@ -35,12 +34,11 @@ Here is the canonical "Hello, world" example app:
         application = tornado.web.Application([
             (r"/", MainHandler),
         ])
-        http_server = tornado.httpserver.HTTPServer(application)
-        http_server.listen(8888)
+        application.listen(8888)
         tornado.ioloop.IOLoop.instance().start()
 
-See the Tornado walkthrough on GitHub for more details and a good
-getting started guide.
+See the Tornado walkthrough on http://tornadoweb.org for more details
+and a good getting started guide.
 """
 
 from __future__ import with_statement
@@ -164,12 +162,6 @@ class RequestHandler(object):
 
         You may override this to clean up resources associated with
         long-lived connections.
-
-        Note that the select()-based implementation of IOLoop does not detect
-        closed connections and so this method will not be called until
-        you try (and fail) to produce some output.  The epoll- and kqueue-
-        based implementations should detect closed connections even while
-        the request is idle.
 
         Proxies may keep a connection open for a time (perhaps
         indefinitely) after the client has gone away, so this method
@@ -323,11 +315,21 @@ class RequestHandler(object):
 
         To read a cookie set with this method, use get_secure_cookie().
         """
+        self.set_cookie(name, self.create_signed_value(name, value),
+                        expires_days=expires_days, **kwargs)
+
+    def create_signed_value(self, name, value):
+        """Signs and timestamps a string so it cannot be forged.
+
+        Normally used via set_secure_cookie, but provided as a separate
+        method for non-cookie uses.  To decode a value not stored
+        as a cookie use the optional value argument to get_secure_cookie.
+        """
         timestamp = str(int(time.time()))
         value = base64.b64encode(value)
         signature = self._cookie_signature(name, value, timestamp)
         value = "|".join([value, timestamp, signature])
-        self.set_cookie(name, value, expires_days=expires_days, **kwargs)
+        return value
 
     def get_secure_cookie(self, name, include_name=True, value=None):
         """Returns the given signed cookie if it validates, or None.
@@ -794,9 +796,9 @@ class RequestHandler(object):
             return base + static_url_prefix + path
 
     def async_callback(self, callback, *args, **kwargs):
-        """Wrap callbacks with this if they are used on asynchronous requests.
+        """Obsolete - catches exceptions from the wrapped function.
 
-        Catches exceptions and properly finishes the request.
+        This function is unnecessary since Tornado 1.1.
         """
         if callback is None:
             return None
@@ -1145,6 +1147,25 @@ class Application(object):
             import autoreload
             autoreload.start()
 
+    def listen(self, port, address="", **kwargs):
+        """Starts an HTTP server for this application on the given port.
+
+        This is a convenience alias for creating an HTTPServer object
+        and calling its listen method.  Keyword arguments not
+        supported by HTTPServer.listen are passed to the HTTPServer
+        constructor.  For advanced uses (e.g. preforking), do not use
+        this method; create an HTTPServer and call its bind/start
+        methods directly.
+
+        Note that after calling this method you still need to call
+        IOLoop.instance().start() to start the server.
+        """
+        # import is here rather than top level because HTTPServer
+        # is not importable on appengine
+        from tornado.httpserver import HTTPServer
+        server = HTTPServer(self, **kwargs)
+        server.listen(port, address)
+
     def add_handlers(self, host_pattern, host_handlers):
         """Appends the given handlers to our handler list.
 
@@ -1236,7 +1257,7 @@ class Application(object):
         handlers = self._get_host_handlers(request)
         if not handlers:
             handler = RedirectHandler(
-                request, "http://" + self.default_host + "/")
+                self, request, "http://" + self.default_host + "/")
         else:
             for spec in handlers:
                 match = spec.regex.match(request.path)
@@ -1264,8 +1285,8 @@ class Application(object):
         # request so you don't need to restart to see changes
         if self.settings.get("debug"):
             if getattr(RequestHandler, "_templates", None):
-                map(lambda loader: loader.reset(),
-                    RequestHandler._templates.values())
+                for loader in RequestHandler._templates.values():
+                    loader.reset()
             RequestHandler._static_hashes = {}
 
         handler._execute(transforms, *args, **kwargs)
@@ -1343,17 +1364,30 @@ class StaticFileHandler(RequestHandler):
     want browsers to cache a file indefinitely, send them to, e.g.,
     /static/images/myimage.png?v=xxx.
     """
-    def __init__(self, application, request, path):
+    def __init__(self, application, request, path, default_filename=None):
         RequestHandler.__init__(self, application, request)
         self.root = os.path.abspath(path) + os.path.sep
+        self.default_filename = default_filename
 
     def head(self, path):
         self.get(path, include_body=False)
 
     def get(self, path, include_body=True):
+        if os.path.sep != "/":
+            path = path.replace("/", os.path.sep)
         abspath = os.path.abspath(os.path.join(self.root, path))
-        if not abspath.startswith(self.root):
+        # os.path.abspath strips a trailing /
+        # it needs to be temporarily added back for requests to root/
+        if not (abspath + os.path.sep).startswith(self.root):
             raise HTTPError(403, "%s is not in root static directory", path)
+        if os.path.isdir(abspath) and self.default_filename is not None:
+            # need to look at the request.path here for when path is empty
+            # but there is some prefix to the path that was already
+            # trimmed by the routing
+            if not self.request.path.endswith("/"):
+                self.redirect(self.request.path + "/")
+                return
+            abspath = os.path.join(abspath, self.default_filename)
         if not os.path.exists(abspath):
             raise HTTPError(404)
         if not os.path.isfile(abspath):
@@ -1387,7 +1421,6 @@ class StaticFileHandler(RequestHandler):
 
         if not include_body:
             return
-        self.set_header("Content-Length", stat_result[stat.ST_SIZE])
         file = open(abspath, "rb")
         try:
             self.write(file.read())
