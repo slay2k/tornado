@@ -700,7 +700,7 @@ try:
         def _parse_connection_details(details):
             # mongodb://[host[:port]]/db
             match = re.match('mongodb://([\S|\.]+?)?(?::(\d+))?/(\S+)', details)
-            return match.group(1), match.group(2), match.group(3) # host, port, database
+            return match.group(1), int(match.group(2)), match.group(3) # host, port, database
 
         def save(self):
             """Upsert a document to the tornado_sessions collection.
