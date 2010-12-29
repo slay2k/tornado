@@ -226,7 +226,7 @@ class BaseSession(collections.MutableMapping):
         if self.expires is None:
             return None
         else:
-            return int(time.mktime(self.expires.timetuple())),
+            return int(time.mktime(self.expires.timetuple()))
 
     def _should_regenerate(self):
         """Determine if the session_id should be regenerated."""
