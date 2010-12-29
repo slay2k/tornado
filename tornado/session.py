@@ -699,8 +699,20 @@ try:
         @staticmethod
         def _parse_connection_details(details):
             # mongodb://[host[:port]]/db
-            match = re.match('mongodb://([\S|\.]+?)?(?::(\d+))?/(\S+)', details)
-            return match.group(1), int(match.group(2)), match.group(3) # host, port, database
+            if details[10] != '/':
+                # host and port specified
+                match = re.match('mongodb://([\S|\.]+?)?(?::(\d+))?/(\S+)', details)
+                host = match.group(1)
+                port = int(match.group(2))
+                database = match.group(3)
+            else:
+                # default host and port
+                host = 'localhost'
+                port = 27017
+                match = re.match('mongodb:///(\S+)', details)
+                database = match.group(1)
+
+            return host, port, database
 
         def save(self):
             """Upsert a document to the tornado_sessions collection.
