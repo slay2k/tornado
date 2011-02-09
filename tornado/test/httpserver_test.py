@@ -18,6 +18,7 @@ except ImportError:
 
 class HelloWorldRequestHandler(RequestHandler):
     def get(self):
+        assert self.request.protocol == "https"
         self.finish("Hello world")
 
     def post(self):
@@ -54,6 +55,16 @@ class SSLTest(AsyncHTTPTestCase, LogTrapTestCase):
                               method='POST',
                               body='A'*5000)
         self.assertEqual(response.body, "Got 5000 bytes in POST")
+
+    def test_non_ssl_request(self):
+        # Make sure the server closes the connection when it gets a non-ssl
+        # connection, rather than waiting for a timeout or otherwise
+        # misbehaving.
+        self.http_client.fetch(self.get_url("/"), self.stop,
+                               request_timeout=3600,
+                               connect_timeout=3600)
+        response = self.wait()
+        self.assertEqual(response.code, 599)
 
 if (ssl is None or pycurl is None or
     (pycurl.version_info()[5].startswith('GnuTLS') and

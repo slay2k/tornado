@@ -39,6 +39,14 @@ Here is the canonical "Hello, world" example app:
 
 See the Tornado walkthrough on http://tornadoweb.org for more details
 and a good getting started guide.
+
+Thread-safety notes:
+
+In general, methods on RequestHandler and elsewhere in tornado are not
+thread-safe.  In particular, methods such as write(), finish(), and
+flush() must only be called from the main thread.  If you use multiple
+threads it is important to use IOLoop.add_callback to transfer control
+back to the main thread before finishing the request.
 """
 
 from __future__ import with_statement
@@ -186,6 +194,10 @@ class RequestHandler(object):
         """Sets the status code for our response."""
         assert status_code in httplib.responses
         self._status_code = status_code
+
+    def get_status(self):
+        """Returns the status code for our response."""
+        return self._status_code
 
     def set_header(self, name, value):
         """Sets the given response header name and value.
@@ -732,16 +744,27 @@ class RequestHandler(object):
     def check_xsrf_cookie(self):
         """Verifies that the '_xsrf' cookie matches the '_xsrf' argument.
 
-        To prevent cross-site request forgery, we set an '_xsrf' cookie
-        and include the same '_xsrf' value as an argument with all POST
-        requests. If the two do not match, we reject the form submission
-        as a potential forgery.
+        To prevent cross-site request forgery, we set an '_xsrf'
+        cookie and include the same value as a non-cookie
+        field with all POST requests. If the two do not match, we
+        reject the form submission as a potential forgery.
+
+        The _xsrf value may be set as either a form field named _xsrf
+        or in a custom HTTP header named X-XSRFToken or X-CSRFToken
+        (the latter is accepted for compatibility with Django).
 
         See http://en.wikipedia.org/wiki/Cross-site_request_forgery
+
+        Prior to release 1.1.1, this check was ignored if the HTTP header
+        "X-Requested-With: XMLHTTPRequest" was present.  This exception
+        has been shown to be insecure and has been removed.  For more
+        information please see
+        http://www.djangoproject.com/weblog/2011/feb/08/security/
+        http://weblog.rubyonrails.org/2011/2/8/csrf-protection-bypass-in-ruby-on-rails
         """
-        if self.request.headers.get("X-Requested-With") == "XMLHttpRequest":
-            return
-        token = self.get_argument("_xsrf", None)
+        token = (self.get_argument("_xsrf", None) or
+                 self.request.headers.get("X-Xsrftoken") or
+                 self.request.headers.get("X-Csrftoken"))
         if not token:
             raise HTTPError(403, "'_xsrf' argument missing from POST")
         if self.xsrf_token != token:
@@ -867,15 +890,13 @@ class RequestHandler(object):
         return "\r\n".join(lines) + "\r\n\r\n"
 
     def _log(self):
-        if self._status_code < 400:
-            log_method = logging.info
-        elif self._status_code < 500:
-            log_method = logging.warning
-        else:
-            log_method = logging.error
-        request_time = 1000.0 * self.request.request_time()
-        log_method("%d %s %.2fms", self._status_code,
-                   self._request_summary(), request_time)
+        """Logs the current request.
+
+        Sort of deprecated since this functionality was moved to the
+        Application, but left in place for the benefit of existing apps
+        that have overridden this method.
+        """
+        self.application.log_request(self)
 
     def _request_summary(self):
         return self.request.method + " " + self.request.uri + " (" + \
@@ -1266,7 +1287,7 @@ class Application(object):
         handlers = self._get_host_handlers(request)
         if not handlers:
             handler = RedirectHandler(
-                self, request, "http://" + self.default_host + "/")
+                self, request, url="http://" + self.default_host + "/")
         else:
             for spec in handlers:
                 match = spec.regex.match(request.path)
@@ -1309,6 +1330,28 @@ class Application(object):
         if name in self.named_handlers:
             return self.named_handlers[name].reverse(*args)
         raise KeyError("%s not found in named urls" % name)
+
+    def log_request(self, handler):
+        """Writes a completed HTTP request to the logs.
+
+        By default writes to the python root logger.  To change
+        this behavior either subclass Application and override this method,
+        or pass a function in the application settings dictionary as
+        'log_function'.
+        """
+        if "log_function" in self.settings:
+            self.settings["log_function"](handler)
+            return
+        if handler.get_status() < 400:
+            log_method = logging.info
+        elif handler.get_status() < 500:
+            log_method = logging.warning
+        else:
+            log_method = logging.error
+        request_time = 1000.0 * handler.request.request_time()
+        log_method("%d %s %.2fms", handler.get_status(),
+                   handler._request_summary(), request_time)
+
 
 
 class HTTPError(Exception):

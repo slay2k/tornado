@@ -459,7 +459,13 @@ class HTTPRequest(object):
                 self.protocol = "http"
         else:
             self.remote_ip = remote_ip
-            self.protocol = protocol or "http"
+            if protocol:
+                self.protocol = protocol
+            elif connection and isinstance(connection.stream, 
+                                           iostream.SSLIOStream):
+                self.protocol = "https"
+            else:
+                self.protocol = "http"
         self.host = host or self.headers.get("Host") or "127.0.0.1"
         self.files = files or {}
         self.connection = connection
@@ -517,8 +523,8 @@ class HTTPRequest(object):
         http://docs.python.org/library/ssl.html#sslsocket-objects
         """
         try:
-            return self.connection.socket.getpeercert()
-        except:
+            return self.connection.stream.socket.getpeercert()
+        except ssl.SSLError:
             return None
 
     def __repr__(self):
