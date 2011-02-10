@@ -543,7 +543,7 @@ class MySQLSession(BaseSession):
                 data longtext,
                 expires integer,
                 ip_address varchar(46),
-                user_agent varchar(255)
+                user_agent varchar(768)
                 );""")
 
         self.connection.execute( # MySQL's upsert
@@ -554,7 +554,7 @@ class MySQLSession(BaseSession):
             session_id=values(session_id), data=values(data), expires=values(expires),
             ip_address=values(ip_address), user_agent=values(user_agent);""",
             self.session_id, self.serialize(), self._serialize_expires(),
-            self.ip_address, self.user_agent)
+            self.ip_address, self.user_agent if len(self.user_agent) <= 768 else self.user_agent[:768])
         self.dirty = False
 
     @staticmethod
