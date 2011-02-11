@@ -502,8 +502,11 @@ class MySQLSession(BaseSession):
     stores session data in the table tornado_sessions. If hostname or
     port aren't specified, localhost:3306 are used as defaults. """
 
-    def __init__(self, connection, **kwargs):
+    def __init__(self, connection, max_ua_len=756, **kwargs):
         super(MySQLSession, self).__init__(**kwargs)
+        # Trim UA if it's over limit
+        if self.user_agent and len(self.user_agent) > max_ua_len:
+            self.user_agent = self.user_agent[:max_ua_len]
         self.connection = connection
         if not kwargs.has_key('session_id'):
             self.save()
@@ -525,7 +528,7 @@ class MySQLSession(BaseSession):
             match = re.match('mysql://(\w+):(.*?)/(\S+)', details)
             username = match.group(1)
             password = match.group(2)
-            database = match.group(3)        
+            database = match.group(3)
 
         return username, password, host_port, database
 
@@ -554,7 +557,7 @@ class MySQLSession(BaseSession):
             session_id=values(session_id), data=values(data), expires=values(expires),
             ip_address=values(ip_address), user_agent=values(user_agent);""",
             self.session_id, self.serialize(), self._serialize_expires(),
-            self.ip_address, self.user_agent if len(self.user_agent) <= 768 else self.user_agent[:768])
+            self.ip_address, self.user_agent)
         self.dirty = False
 
     @staticmethod
